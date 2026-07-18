@@ -16,6 +16,9 @@ export interface Seddari {
   height: number; // cm - 20/30/50
   junction: JunctionType; // الربط مع السداري الموالي
   insertDirection?: 'into_next' | 'from_next';
+  x?: number; // موقع الرسم 2D
+  y?: number;
+  angle?: number;
 }
 
 export interface CushionPlan {
