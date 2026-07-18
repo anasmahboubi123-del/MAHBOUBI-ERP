@@ -1,0 +1,70 @@
+'use client';
+import { useState } from 'react';
+import toast from 'react-hot-toast';
+import { getSetting } from '@/lib/supabase';
+
+const FALLBACK: Record<string, string> = { seller: '1111', tailor: '2222', admin: '9999' };
+const LABELS: Record<string, string> = { seller: 'البائع', tailor: 'الخياط', admin: 'المدير' };
+
+/** شاشة إدخال كود PIN لواجهة معينة */
+export default function PinLock({
+  role,
+  onSuccess,
+  onCancel
+}: {
+  role: 'seller' | 'tailor' | 'admin';
+  onSuccess: () => void;
+  onCancel?: () => void;
+}) {
+  const [pin, setPin] = useState('');
+  const [checking, setChecking] = useState(false);
+
+  async function submit(value: string) {
+    setChecking(true);
+    const expected = await getSetting(`pin_${role}`, FALLBACK[role]);
+    setChecking(false);
+    if (value === expected) {
+      sessionStorage.setItem(`auth_${role}`, '1');
+      onSuccess();
+    } else {
+      toast.error('الكود غير صحيح');
+      setPin('');
+    }
+  }
+
+  function press(d: string) {
+    if (checking) return;
+    if (d === 'C') return setPin('');
+    if (d === '⌫') return setPin((p) => p.slice(0, -1));
+    const next = (pin + d).slice(0, 6);
+    setPin(next);
+    if (next.length === 4) submit(next);
+  }
+
+  const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'C', '0', '⌫'];
+
+  return (
+    <div className="flex flex-col items-center gap-4 p-4">
+      <h2 className="text-xl font-bold">كود دخول {LABELS[role]}</h2>
+      <div className="flex gap-3" dir="ltr">
+        {[0, 1, 2, 3].map((i) => (
+          <span key={i} className={`h-4 w-4 rounded-full border-2 border-brand-600 ${pin.length > i ? 'bg-brand-600' : ''}`} />
+        ))}
+      </div>
+      <div className="grid grid-cols-3 gap-3" dir="ltr">
+        {keys.map((k) => (
+          <button
+            key={k}
+            onClick={() => press(k)}
+            className="h-16 w-16 rounded-full bg-white text-2xl font-bold shadow hover:bg-brand-100 active:scale-95"
+          >
+            {k}
+          </button>
+        ))}
+      </div>
+      {onCancel && (
+        <button onClick={onCancel} className="text-gray-500 underline">إلغاء</button>
+      )}
+    </div>
+  );
+}
