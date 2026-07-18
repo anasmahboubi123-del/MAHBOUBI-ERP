@@ -6,7 +6,9 @@ import PinLock from '@/components/ui/PinLock';
 
 const tabs = [
   { href: '/admin', label: '📊 لوحة التحكم' },
+  { href: '/admin/orders', label: '📦 الطلبيات' },
   { href: '/admin/catalogue', label: '🖼️ الكتالوج' },
+  { href: '/admin/tailors', label: '🧵 الخياطين' },
   { href: '/admin/settings', label: '⚙️ الإعدادات' }
 ];
 

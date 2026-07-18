@@ -21,6 +21,12 @@ export async function sendWhatsAppThanks(name: string, phone: string, total: num
   return post(url, { type: 'order_thanks', name, phone, total, deliveryDate });
 }
 
+/** رسالة "طلبيتك جاهزة" للزبون (عبر Make.com) */
+export async function sendWhatsAppReady(name: string, phone: string, orderNumber?: number) {
+  const url = await getSetting('whatsapp_webhook', '');
+  return post(url, { type: 'order_ready', name, phone, orderNumber });
+}
+
 /** إضافة موعد التسليم في Google Calendar (عبر Make.com) */
 export async function addCalendarEvent(name: string, phone: string, deliveryDate: string, orderNumber?: number) {
   const url = await getSetting('calendar_webhook', '');
