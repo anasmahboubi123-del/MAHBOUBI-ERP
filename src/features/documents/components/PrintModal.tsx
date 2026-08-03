@@ -4,19 +4,28 @@ import React, { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import {
   Printer, X, Phone, Download, FileText, Check,
-  Globe, Tag, Info, Ruler, Box, Scissors, Palette, Layers,
+  Tag, Info, Ruler, Box, Scissors, Palette, Layers, QrCode, Stamp,
 } from "lucide-react";
-import { supabase } from "@/lib/supabaseClient";
-import { getDocumentConditions } from "../services/documentConditions";
-import { defaultBusinessProfile } from "../services/businessProfile";
+import type { DocumentType } from "@/features/order-center/types";
+import { getDocumentConditions } from "@/features/order-center/services/documentConditions";
+import { getDocumentBackgroundUrl } from "@/features/order-center/services/documentBackgrounds";
+import {
+  loadBusinessProfile,
+  getPublicUrl,
+  getDisplayName,
+  type BusinessProfile,
+} from "@/features/order-center/services/businessProfile";
+
+// Re-exported so `import type { DocumentType } from ".../PrintModal"` (as used
+// in page.tsx) keeps working, while the actual definition stays single-source
+// in @/features/order-center/types — no more duplicate/conflicting DocumentType.
+export type { DocumentType };
 
 const C = { green: "#1B5E38", gold: "#C9A84C", dark: "#0D1F17", cream: "#F5F0E8" };
 
 /* ═══════════════════════════════════════════════════════════
    Internal Types
    ═══════════════════════════════════════════════════════════ */
-export type DocumentType = "devis" | "bon_de_commande" | "facture" | "work_order";
-
 export interface OrderItem {
   id: string;
   orderItemId: string;
@@ -68,52 +77,57 @@ export default function PrintModal(props: PrintModalProps) {
     documentType, printOptions, onClose,
   } = props;
 
+  const [profile, setProfile] = useState<BusinessProfile | null>(null);
   const [logoUrl, setLogoUrl] = useState<string>("");
   const [logoError, setLogoError] = useState(false);
   const [bgUrl, setBgUrl] = useState<string>("");
   const [bgError, setBgError] = useState(false);
+  const [stampUrl, setStampUrl] = useState<string>("");
+  const [stampError, setStampError] = useState(false);
   const [conditions, setConditions] = useState<string[]>([]);
   const [showConditions, setShowConditions] = useState(true);
   const [showSignatures, setShowSignatures] = useState(printOptions.includeSignatures ?? true);
   const [showPrices, setShowPrices] = useState(printOptions.includePrices ?? true);
   const [showDetails, setShowDetails] = useState(printOptions.includeProductionDetails ?? true);
+  const [showQrCode, setShowQrCode] = useState(printOptions.includeQrCode ?? false);
+  const [showStamp, setShowStamp] = useState(printOptions.includeStamp ?? false);
   const [lang, setLang] = useState<"ar" | "fr" | "bilingual">(printOptions.language || "ar");
   const [isExporting, setIsExporting] = useState(false);
   const printRef = useRef<HTMLDivElement>(null);
 
-  /* ── Load assets from Supabase with validation ── */
+  /* ── Load business profile (logo/stamp/address live here now), the
+     per-document-type background, and the conditions list ── */
   useEffect(() => {
+    let cancelled = false;
+
     async function loadAssets() {
-      // Try logo
-      try {
-        const logoPath = "logo.jpg";
-        const { data: logoExists } = await supabase.storage.from("site-assets").list("", { search: logoPath });
-        const { data: logoPublic } = supabase.storage.from("site-assets").getPublicUrl(logoPath);
-        if (logoPublic?.publicUrl) {
-          // Verify by fetching
-          const resp = await fetch(logoPublic.publicUrl, { method: "HEAD", mode: "no-cors" });
-          setLogoUrl(logoPublic.publicUrl);
-        }
-      } catch {
-        setLogoError(true);
-      }
+      setLogoError(false);
+      setBgError(false);
+      setStampError(false);
 
-      // Try background
-      try {
-        const bgPath = `backgrounds/documents/${documentType}-bg.png`;
-        const { data: bgPublic } = supabase.storage.from("site-assets").getPublicUrl(bgPath);
-        if (bgPublic?.publicUrl) {
-          setBgUrl(bgPublic.publicUrl);
-        }
-      } catch {
-        setBgError(true);
-      }
+      const [biz, bg, conds] = await Promise.all([
+        loadBusinessProfile(),
+        getDocumentBackgroundUrl(documentType),
+        getDocumentConditions(documentType),
+      ]);
 
-      // Load conditions
-      const conds = await getDocumentConditions(documentType);
+      if (cancelled) return;
+
+      setProfile(biz);
+
+      const logo = getPublicUrl(biz.logo_url);
+      if (logo) setLogoUrl(logo); else setLogoError(true);
+
+      const stamp = getPublicUrl(biz.stamp_url);
+      if (stamp) setStampUrl(stamp); else setStampError(true);
+
+      if (bg) setBgUrl(bg); else setBgError(true);
+
       setConditions(conds);
     }
+
     loadAssets();
+    return () => { cancelled = true; };
   }, [documentType]);
 
   /* ── Helpers ── */
@@ -121,7 +135,6 @@ export default function PrintModal(props: PrintModalProps) {
     devis: lang === "fr" ? "DEVIS" : lang === "bilingual" ? "DEVIS — عرض سعر" : "عرض سعر",
     bon_de_commande: lang === "fr" ? "BON DE COMMANDE" : lang === "bilingual" ? "BON DE COMMANDE — أمر شراء" : "بون دي كوموند",
     facture: lang === "fr" ? "FACTURE" : lang === "bilingual" ? "FACTURE — فاتورة" : "فاتورة",
-    work_order: lang === "fr" ? "ORDRE DE TRAVAIL" : lang === "bilingual" ? "ORDRE DE TRAVAIL — أمر شغل" : "أمر شغل",
   };
 
   const t = (ar: string, fr: string) => {
@@ -134,25 +147,7 @@ export default function PrintModal(props: PrintModalProps) {
     year: "numeric", month: "long", day: "numeric",
   });
 
-  const handlePrint = () => window.print();
-
-  const handleWhatsApp = () => {
-    const phone = customerPhone?.replace(/\s/g, "").replace(/^0/, "212");
-    const msg = `${t("مرحباً", "Bonjour")} ${customerName}،\n\n` +
-      `${t("طلبك رقم", "Votre commande N°")} *${orderNumber}*\n` +
-      `${t("المبلغ الإجمالي", "Montant total")}: *${totalAmount.toLocaleString()} ${t("د.م", "DH")}*\n\n` +
-      `${t("شكراً لثقتكم", "Merci de votre confiance")} 🪑`;
-    window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, "_blank");
-  };
-
-  const handleExportPDF = () => {
-    setIsExporting(true);
-    const style = document.createElement("style");
-    style.innerHTML = `@media print { @page { size: A4; margin: 0; } }`;
-    document.head.appendChild(style);
-    window.print();
-    setTimeout(() => { document.head.removeChild(style); setIsExporting(false); }, 1000);
-  };
+  const businessName = profile ? getDisplayName(profile) : t("المحبوبي للأثاث والديكور", "El Mahboubi");
 
   /* ── FIX: Calculate subtotal from items, not from potentially zero total ── */
   const itemsSubtotal = orderItems.reduce((sum, it) => sum + (it.totalPrice || 0), 0);
@@ -161,6 +156,36 @@ export default function PrintModal(props: PrintModalProps) {
   const actualDelivery = deliveryCost || 0;
   const actualDeposit = depositAmount || 0;
   const actualRemaining = Math.max(0, actualTotal - actualDeposit);
+
+  /* ── Print / PDF — both render at A4 via the permanent @page rule below,
+     so "طباعة" and "PDF" no longer produce different page sizes ── */
+  const handlePrint = () => window.print();
+
+  const handleExportPDF = () => {
+    setIsExporting(true);
+    window.print();
+    setTimeout(() => setIsExporting(false), 800);
+  };
+
+  const handleWhatsApp = () => {
+    const phone = customerPhone?.replace(/\s/g, "").replace(/^0/, "212");
+    const msg = `${t("مرحباً", "Bonjour")} ${customerName}،\n\n` +
+      `${t("طلبك رقم", "Votre commande N°")} *${orderNumber}*\n` +
+      `${t("المبلغ الإجمالي", "Montant total")}: *${actualTotal.toLocaleString()} ${t("د.م", "DH")}*\n\n` +
+      `${t("شكراً لثقتكم", "Merci de votre confiance")} 🪑`;
+    window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, "_blank");
+  };
+
+  /* QR code payload — currently encodes order info as plain text so it works
+     with no extra setup. Swap `qrData` for a real order-tracking URL once
+     you have a public order-view page. Uses the free api.qrserver.com
+     endpoint so no new npm dependency is required; swap for a local library
+     like `qrcode.react` if you'd rather not hit an external API at print
+     time / need it to work offline. */
+  const qrData = encodeURIComponent(
+    `${docTitle[documentType]} #${orderNumber} — ${customerName} — ${actualTotal.toLocaleString()} DH`
+  );
+  const qrCodeSrc = `https://api.qrserver.com/v1/create-qr-code/?size=140x140&margin=0&data=${qrData}`;
 
   /* ── Product Renderer ── */
   const renderProduct = (item: OrderItem, idx: number) => {
@@ -379,11 +404,13 @@ export default function PrintModal(props: PrintModalProps) {
       </div>
 
       {/* Settings Bar */}
-      <div className="flex items-center gap-4 px-4 py-2 border-b" style={{ background: "#222", borderColor: "#333" }}>
+      <div className="flex items-center gap-4 px-4 py-2 border-b flex-wrap" style={{ background: "#222", borderColor: "#333" }}>
         <ToggleBtn active={showPrices} onClick={() => setShowPrices(!showPrices)} icon={<Tag className="w-3.5 h-3.5" />} label={t("الأسعار", "Prix")} />
         <ToggleBtn active={showDetails} onClick={() => setShowDetails(!showDetails)} icon={<Info className="w-3.5 h-3.5" />} label={t("التفاصيل", "Détails")} />
         <ToggleBtn active={showConditions} onClick={() => setShowConditions(!showConditions)} icon={<FileText className="w-3.5 h-3.5" />} label={t("الشروط", "Conditions")} />
         <ToggleBtn active={showSignatures} onClick={() => setShowSignatures(!showSignatures)} icon={<Check className="w-3.5 h-3.5" />} label={t("التوقيعات", "Signatures")} />
+        <ToggleBtn active={showQrCode} onClick={() => setShowQrCode(!showQrCode)} icon={<QrCode className="w-3.5 h-3.5" />} label={t("QR", "QR")} />
+        <ToggleBtn active={showStamp} onClick={() => setShowStamp(!showStamp)} icon={<Stamp className="w-3.5 h-3.5" />} label={t("الختم", "Cachet")} />
       </div>
 
       {/* Document Preview */}
@@ -416,12 +443,12 @@ export default function PrintModal(props: PrintModalProps) {
                   />
                 ) : (
                   <div className="h-16 w-40 bg-gray-100 rounded-lg flex items-center justify-center text-gray-400 text-xs border border-gray-200 mb-2">
-                    <span>{t("المحبوبي للأثاث", "El Mahboubi")}</span>
+                    <span>{businessName}</span>
                   </div>
                 )}
-                <h1 className="text-lg font-bold" style={{ color: C.dark }}>{defaultBusinessProfile.name}</h1>
-                <p className="text-xs text-gray-500">{defaultBusinessProfile.address}</p>
-                <p className="text-xs text-gray-500">{defaultBusinessProfile.phone}</p>
+                <h1 className="text-lg font-bold" style={{ color: C.dark }}>{businessName}</h1>
+                <p className="text-xs text-gray-500">{profile?.address || ""}</p>
+                <p className="text-xs text-gray-500">{profile?.phone || ""}</p>
               </div>
               <div className="text-right">
                 <h2 className="text-xl font-bold" style={{ color: C.green }}>{docTitle[documentType]}</h2>
@@ -448,7 +475,7 @@ export default function PrintModal(props: PrintModalProps) {
               <div className="space-y-4">{orderItems.map((item, idx) => renderProduct(item, idx))}</div>
             </div>
 
-            {/* Financial Summary — FIXED: use calculated values */}
+            {/* Financial Summary */}
             {showPrices && (
               <div className="mb-6 p-4 rounded-lg border" style={{ background: C.cream, borderColor: C.gold + "40" }}>
                 <h3 className="font-bold text-xs mb-3 uppercase tracking-wide" style={{ color: C.green }}>{t("الملخص المالي", "Récapitulatif")}</h3>
@@ -497,19 +524,69 @@ export default function PrintModal(props: PrintModalProps) {
               </div>
             )}
 
-            {/* Signatures */}
-            {showSignatures && (
+            {/* Signatures + Stamp + QR */}
+            {(showSignatures || showQrCode || showStamp) && (
               <div className="mt-8 pt-4 border-t" style={{ borderColor: "#ddd" }}>
-                <div className="grid grid-cols-2 gap-8">
-                  <div className="text-center">
-                    <p className="text-xs font-bold mb-8 uppercase">{t("توقيع الزبون", "Signature client")}</p>
-                    <div className="border-t border-gray-400 pt-2 mx-4"><p className="text-xs text-gray-400">{customerName}</p></div>
+                {showSignatures && (
+                  <div className="grid grid-cols-2 gap-8">
+                    <div className="text-center">
+                      <p className="text-xs font-bold mb-8 uppercase">{t("توقيع الزبون", "Signature client")}</p>
+                      <div className="border-t border-gray-400 pt-2 mx-4"><p className="text-xs text-gray-400">{customerName}</p></div>
+                    </div>
+                    <div className="text-center relative">
+                      <p className="text-xs font-bold mb-8 uppercase">{t("توقيع البائع", "Signature vendeur")}</p>
+                      <div className="border-t border-gray-400 pt-2 mx-4"><p className="text-xs text-gray-400">{businessName}</p></div>
+                      {showStamp && (
+                        <div className="absolute" style={{ top: "-14px", left: "16px", transform: "rotate(-8deg)", opacity: 0.85 }}>
+                          {stampUrl && !stampError ? (
+                            <img
+                              src={stampUrl}
+                              alt={t("ختم", "Cachet")}
+                              className="w-20 h-20 object-contain"
+                              onError={() => setStampError(true)}
+                            />
+                          ) : (
+                            <div
+                              className="w-20 h-20 rounded-full border-2 flex items-center justify-center text-[10px] text-center px-1"
+                              style={{ borderColor: C.green, color: C.green }}
+                            >
+                              {t("ختم المحل", "Cachet")}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                  <div className="text-center">
-                    <p className="text-xs font-bold mb-8 uppercase">{t("توقيع البائع", "Signature vendeur")}</p>
-                    <div className="border-t border-gray-400 pt-2 mx-4"><p className="text-xs text-gray-400">{defaultBusinessProfile.name}</p></div>
+                )}
+
+                {/* Stamp on its own when signatures are hidden but stamp is on */}
+                {!showSignatures && showStamp && (
+                  <div className="flex justify-end mb-4">
+                    {stampUrl && !stampError ? (
+                      <img
+                        src={stampUrl}
+                        alt={t("ختم", "Cachet")}
+                        className="w-20 h-20 object-contain"
+                        style={{ transform: "rotate(-8deg)", opacity: 0.85 }}
+                        onError={() => setStampError(true)}
+                      />
+                    ) : (
+                      <div
+                        className="w-20 h-20 rounded-full border-2 flex items-center justify-center text-[10px] text-center px-1"
+                        style={{ borderColor: C.green, color: C.green, transform: "rotate(-8deg)", opacity: 0.85 }}
+                      >
+                        {t("ختم المحل", "Cachet")}
+                      </div>
+                    )}
                   </div>
-                </div>
+                )}
+
+                {showQrCode && (
+                  <div className="flex flex-col items-center mt-6">
+                    <img src={qrCodeSrc} alt="QR" className="w-[90px] h-[90px]" />
+                    <p className="text-[10px] text-gray-400 mt-1">{t("امسح للتحقق من الطلب", "Scannez pour vérifier")}</p>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -518,6 +595,10 @@ export default function PrintModal(props: PrintModalProps) {
 
       {/* Print Styles */}
       <style jsx global>{`
+        @page {
+          size: A4;
+          margin: 0;
+        }
         @media print {
           body * { visibility: hidden !important; }
           .document-page, .document-page * { visibility: visible !important; }
