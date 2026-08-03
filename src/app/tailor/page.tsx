@@ -1,78 +1,93 @@
-'use client';
-import { useEffect, useState } from 'react';
-import Link from 'next/link';
-import { supabase } from '@/lib/supabase';
-import Card from '@/components/ui/Card';
-import { differenceInCalendarDays, parseISO } from 'date-fns';
+"use client";
 
-interface OrderRow {
-  id: string;
-  order_number: number;
-  status: string;
-  customer_name: string | null;
-  delivery_date: string | null;
-  created_at: string;
-}
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { getTailors } from "@/lib/supabase-tailors";
+import { useTailorAuth } from "@/hooks/useTailorAuth";
+import { Scissors, LogIn } from "lucide-react";
 
-const statusLabels: Record<string, { label: string; cls: string }> = {
-  pending: { label: 'معلقة', cls: 'bg-amber-100 text-amber-700' },
-  reviewed: { label: 'جاهزة للتنفيذ', cls: 'bg-purple-100 text-purple-700' },
-  in_progress: { label: 'قيد التنفيذ', cls: 'bg-blue-100 text-blue-700' },
-  completed: { label: 'مكتملة', cls: 'bg-green-100 text-green-700' }
-};
+export default function TailorLoginPage() {
+  const [pin, setPin] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const { login } = useTailorAuth(false);
+  const router = useRouter();
 
-/** قائمة انتظار الخياط - بدون أي أثمنة */
-export default function TailorHome() {
-  const [orders, setOrders] = useState<OrderRow[]>([]);
-  const [loading, setLoading] = useState(true);
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (pin.length !== 4) return;
+    setLoading(true);
+    setError("");
 
-  useEffect(() => {
-    (async () => {
-      const { data } = await supabase
-        .from('orders')
-        .select('id, order_number, status, customer_name, delivery_date, created_at')
-        .in('status', ['reviewed', 'in_progress', 'completed'])
-        .order('delivery_date', { ascending: true });
-      setOrders((data as OrderRow[]) ?? []);
+    try {
+      const tailors = await getTailors();
+      const tailor = tailors.find((t) => t.pin_code === pin && t.is_active);
+      if (!tailor) {
+        setError("كود PIN غير صحيح أو الخياط غير نشط");
+        setLoading(false);
+        return;
+      }
+      login(tailor.id, tailor.full_name, tailor.pin_code);
+      router.push("/tailor/dashboard");
+    } catch (err) {
+      setError("حدث خطأ في الاتصال بقاعدة البيانات");
       setLoading(false);
-    })();
-  }, []);
-
-  function daysLeft(d: string | null) {
-    if (!d) return null;
-    return differenceInCalendarDays(parseISO(d), new Date());
-  }
-
-  if (loading) return <p className="p-8 text-center text-gray-500">جارٍ التحميل...</p>;
+    }
+  };
 
   return (
-    <div className="space-y-4">
-      <h1 className="text-2xl font-bold text-brand-700">الطلبيات</h1>
-      {orders.length === 0 && <p className="text-gray-400">لا توجد طلبيات حالياً</p>}
-      {orders.map((o) => {
-        const left = daysLeft(o.delivery_date);
-        const st = statusLabels[o.status] ?? { label: o.status, cls: 'bg-gray-100' };
-        return (
-          <Link key={o.id} href={`/tailor/orders/${o.id}`} className="block">
-            <Card className="flex items-center justify-between">
-              <div>
-                <div className="text-lg font-bold">
-                  #{o.order_number} — {o.customer_name ?? 'زبون'}
-                </div>
-                <span className={`rounded-full px-3 py-0.5 text-sm ${st.cls}`}>{st.label}</span>
-              </div>
-              <div className="text-left">
-                <div className="text-sm text-gray-500">التسليم: {o.delivery_date ?? '—'}</div>
-                {left !== null && o.status !== 'completed' && (
-                  <div className={`font-bold ${left <= 2 ? 'text-red-600' : 'text-green-600'}`}>
-                    {left >= 0 ? `⛳ باقي ${left} يوم` : `⚠️ متأخر ${-left} يوم`}
-                  </div>
-                )}
-              </div>
-            </Card>
-          </Link>
-        );
-      })}
+    <div className="min-h-screen bg-[#FAFAF8] flex items-center justify-center p-4" dir="rtl">
+      <div className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-md border border-[#E5E7EB]">
+        <div className="text-center mb-8">
+          <div className="w-16 h-16 bg-[#1B5E38] rounded-2xl mx-auto flex items-center justify-center mb-4">
+            <Scissors size={32} className="text-white" />
+          </div>
+          <h1 className="text-2xl font-bold text-[#1A1A1A]">تسجيل دخول الخياط</h1>
+          <p className="text-sm text-[#6B7280] mt-2">أدخل كود PIN المكون من 4 أرقام</p>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="relative">
+            <input
+              type="password"
+              inputMode="numeric"
+              maxLength={4}
+              value={pin}
+              onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
+              placeholder="••••"
+              className="w-full text-center text-3xl tracking-[1em] py-4 rounded-xl border border-[#E5E7EB] bg-[#FAFAF8] text-[#1A1A1A] focus:ring-2 focus:ring-[#1B5E38] outline-none transition-all"
+              autoFocus
+            />
+          </div>
+
+          {error && (
+            <div className="bg-red-50 text-red-600 text-sm text-center py-2 px-4 rounded-lg border border-red-100">
+              {error}
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={loading || pin.length !== 4}
+            className="w-full py-3.5 bg-[#1B5E38] text-white rounded-xl font-bold hover:bg-[#2D7A4E] transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          >
+            {loading ? (
+              <span className="animate-pulse">جاري التحقق...</span>
+            ) : (
+              <>
+                <LogIn size={18} />
+                دخول
+              </>
+            )}
+          </button>
+        </form>
+
+        <div className="mt-6 text-center">
+          <p className="text-xs text-[#9CA3AF]">
+            الجلسة تستمر لمدة 8 ساعات
+          </p>
+        </div>
+      </div>
     </div>
   );
 }

@@ -2,11 +2,44 @@
 @tailwind components;
 @tailwind utilities;
 
-html { direction: rtl; }
-body { @apply bg-brand-50 text-gray-800; font-family: 'Segoe UI', Tahoma, sans-serif; }
+/* Cairo font is loaded via next/font/google in layout.tsx */
 
-@media print {
-  body * { visibility: hidden; }
-  #invoice-area, #invoice-area * { visibility: visible; }
-  #invoice-area { position: absolute; inset: 0; width: 100%; }
+/* Smooth scrolling */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Custom scrollbar for webkit browsers */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f5ecd7;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #C8A64A;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #b8943f;
+}
+
+/* Focus visible styles */
+*:focus-visible {
+  outline: 3px solid #C8A64A;
+  outline-offset: 2px;
+}
+
+/* Reduce motion for accessibility */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

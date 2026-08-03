@@ -1,0 +1,294 @@
+"use client";
+
+import React, { createContext, useContext, useState, useCallback } from "react";
+import {
+  CartState,
+  OrderItem,
+  Customer,
+  Delivery,
+  CartFinancial,
+  CartNotes,
+  ProductResult,
+} from "../types";
+
+import { supabase } from "@/lib/supabaseClient";
+import { getNextOrderNumber } from "@/features/order-center/services/orderCounter";
+
+/* ─── helpers ─── */
+const uid = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
+
+const emptyCustomer: Customer = {
+  name: "",
+  phone: "",
+  phone2: "",
+  email: "",
+  address: "",
+  city: "",
+  customerType: "individual",
+};
+
+const emptyDelivery: Partial<Delivery> = {
+  method: "pickup",
+  expectedDate: "",
+  status: "pending",
+  cost: 0,
+};
+
+const emptyFinancial: CartFinancial = {
+  discountAmount: 0,
+  discountInput: "",
+  depositAmount: 0,
+  depositInput: "",
+  deliveryCost: 0,
+};
+
+const emptyNotes: CartNotes = {
+  customer: "",
+  internal: "",
+  production: "",
+};
+
+const emptyCart: CartState = {
+  items: [],
+  customer: { ...emptyCustomer },
+  delivery: { ...emptyDelivery },
+  financial: { ...emptyFinancial },
+  notes: { ...emptyNotes },
+};
+
+/* ─── Context ─── */
+interface OrderContextValue {
+  cart: CartState;
+  cartTotals: {
+    subtotal: number;
+    discount: number;
+    delivery: number;
+    total: number;
+    deposit: number;
+    remaining: number;
+  };
+  addToCart: (product: ProductResult) => void;
+  removeFromCart: (id: string) => void;
+  clearCart: () => void;
+  updateCustomer: (patch: Partial<Customer>) => void;
+  updateDelivery: (patch: Partial<Delivery>) => void;
+  applyDiscount: (amount: number, reason?: string) => void;
+  applyDeposit: (amount: number) => void;
+  updateDeliveryCost: (cost: number) => void;
+  updateNotes: (key: keyof CartNotes, value: string) => void;
+  searchCustomer: (phone: string) => Promise<any[]>;
+  createOrder: (status: "draft" | "confirmed") => Promise<{ id: string; orderNumber: string } | null>;
+  isSubmitting: boolean;
+}
+
+const OrderContext = createContext<OrderContextValue | null>(null);
+
+export function OrderProvider({ children }: { children: React.ReactNode }) {
+  const [cart, setCart] = useState<CartState>({ ...emptyCart });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [discountReason, setDiscountReason] = useState("");
+
+  /* ─── totals ─── */
+  const subtotal = cart.items.reduce((s, it) => s + it.totalPrice, 0);
+  const discount = cart.financial.discountAmount || 0;
+  const delivery = cart.financial.deliveryCost || 0;
+  const total = Math.max(0, subtotal - discount + delivery);
+  const deposit = cart.financial.depositAmount || 0;
+  const remaining = Math.max(0, total - deposit);
+
+  const cartTotals = { subtotal, discount, delivery, total, deposit, remaining };
+
+  /* ─── cart actions ─── */
+  const addToCart = useCallback((product: ProductResult) => {
+    const item: OrderItem = {
+      ...product,
+      orderItemId: uid(),
+      addedAt: new Date().toISOString(),
+    };
+    setCart((prev) => ({ ...prev, items: [...prev.items, item] }));
+  }, []);
+
+  const removeFromCart = useCallback((id: string) => {
+    setCart((prev) => ({ ...prev, items: prev.items.filter((i) => i.orderItemId !== id) }));
+  }, []);
+
+  const clearCart = useCallback(() => {
+    setCart({ ...emptyCart });
+    setDiscountReason("");
+  }, []);
+
+  /* ─── customer ─── */
+  const updateCustomer = useCallback((patch: Partial<Customer>) => {
+    setCart((prev) => ({
+      ...prev,
+      customer: { ...prev.customer, ...patch },
+    }));
+  }, []);
+
+  /* ─── delivery ─── */
+  const updateDelivery = useCallback((patch: Partial<Delivery>) => {
+    setCart((prev) => ({
+      ...prev,
+      delivery: { ...prev.delivery, ...patch } as Partial<Delivery>,
+    }));
+  }, []);
+
+  /* ─── financial ─── */
+  const applyDiscount = useCallback((amount: number, reason?: string) => {
+    setCart((prev) => ({
+      ...prev,
+      financial: { ...prev.financial, discountAmount: amount, discountInput: String(amount) },
+    }));
+    if (reason) setDiscountReason(reason);
+  }, []);
+
+  const applyDeposit = useCallback((amount: number) => {
+    setCart((prev) => ({
+      ...prev,
+      financial: { ...prev.financial, depositAmount: amount, depositInput: String(amount) },
+    }));
+  }, []);
+
+  const updateDeliveryCost = useCallback((cost: number) => {
+    setCart((prev) => ({
+      ...prev,
+      financial: { ...prev.financial, deliveryCost: cost },
+    }));
+  }, []);
+
+  /* ─── notes ─── */
+  const updateNotes = useCallback((key: keyof CartNotes, value: string) => {
+    setCart((prev) => ({
+      ...prev,
+      notes: { ...prev.notes, [key]: value },
+    }));
+  }, []);
+
+  /* ─── search customer ─── */
+  const searchCustomer = useCallback(async (phone: string) => {
+    if (phone.length < 4) return [];
+    const { data } = await supabase
+      .from("customers")
+      .select("*")
+      .ilike("phone", `%${phone}%`)
+      .limit(5);
+    return data || [];
+  }, []);
+
+  /* ─── create order ─── */
+  const createOrder = useCallback(
+    async (status: "draft" | "confirmed") => {
+      if (!cart.customer.name || !cart.customer.phone) {
+        alert("يرجى إدخال اسم الزبون ورقم الهاتف");
+        return null;
+      }
+      if (!cart.delivery.expectedDate) {
+        alert("يرجى تحديد موعد التسليم المتوقع");
+        return null;
+      }
+      if (cart.items.length === 0) {
+        alert("السلة فارغة");
+        return null;
+      }
+
+      setIsSubmitting(true);
+
+      try {
+        // 1. Generate order number
+        const orderNumber = await getNextOrderNumber();
+
+        // 2. Create order — متوافق مع أعمدة Supabase الفعلية
+        const { data: order, error: orderError } = await supabase
+          .from("orders")
+          .insert({
+            order_number: orderNumber,
+            customer_name: cart.customer.name,
+            customer_phone: cart.customer.phone,
+            customer_email: cart.customer.email || null,
+            customer_address: cart.customer.address || null,
+            customer_city: cart.customer.city || null,
+            status,
+            subtotal,
+            total_amount: total,
+            discount_amount: discount,
+            discount_reason: discountReason || null,
+            delivery_cost: delivery,
+            deposit_amount: deposit,
+            remaining_amount: remaining,
+            delivery_expected_date: cart.delivery.expectedDate || null,
+            delivery_method: cart.delivery.method || "pickup",
+            delivery_address: cart.delivery.address || null,
+            customer_notes: cart.notes.customer || null,
+            internal_notes: cart.notes.internal || null,
+            production_notes: cart.notes.production || null,
+          })
+          .select()
+          .single();
+
+        if (orderError || !order) throw orderError;
+
+        // 3. Create order items — مع kind و label المطلوبين
+        const itemsPayload = cart.items.map((item) => ({
+          order_id: order.id,
+          kind: item.productType || "product",      // ← إلزامي
+          label: item.productName || "منتج",         // ← ✅ أُضيف: إلزامي
+          product_type: item.productType,
+          product_name: item.productName,
+          quantity: item.quantity,
+          unit_price: item.unitPrice,
+          total_price: item.totalPrice,
+          details: item.details,
+          calculations: item.calculations,
+          production_details: item.productionDetails || {},
+          line_notes: item.lineNotes || null,
+          line_discount: item.lineDiscount || 0,
+          thumbnail_url: item.thumbnailUrl || null,
+        }));
+
+        const { error: itemsError } = await supabase
+          .from("order_items")
+          .insert(itemsPayload);
+
+        if (itemsError) throw itemsError;
+
+        return { id: order.id, orderNumber };
+      } catch (err: any) {
+        console.error("Create order error:", err);
+        alert("فشل حفظ الطلب: " + (err.message || "خطأ غير معروف"));
+        return null;
+      } finally {
+        setIsSubmitting(false);
+      }
+    },
+    [cart, subtotal, discount, discountReason, delivery, deposit, total, remaining]
+  );
+
+  return (
+    <OrderContext.Provider
+      value={{
+        cart,
+        cartTotals,
+        addToCart,
+        removeFromCart,
+        clearCart,
+        updateCustomer,
+        updateDelivery,
+        applyDiscount,
+        applyDeposit,
+        updateDeliveryCost,
+        updateNotes,
+        searchCustomer,
+        createOrder,
+        isSubmitting,
+      }}
+    >
+      {children}
+    </OrderContext.Provider>
+  );
+}
+
+export function useOrder() {
+  const ctx = useContext(OrderContext);
+  if (!ctx) throw new Error("useOrder must be inside OrderProvider");
+  return ctx;
+}
