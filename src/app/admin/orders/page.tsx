@@ -11,7 +11,7 @@ type DbOrderPart = Database["public"]["Tables"]["order_parts"]["Row"];
 type DbTailor = Database["public"]["Tables"]["tailors"]["Row"];
 
 type OrderStatus = "new" | "review" | "sent" | "in_progress" | "partial" | "ready" | "late" | "delivered" | "all";
-type FoamOrderStatus = "pending" | "sent_to_supplier" | "in_production" | "ready" | "delivered" | "cancelled" | "all";
+type FoamOrderStatus = string;
 
 interface OrderWithParts extends DbOrder {
   parts: DbOrderPart[];
@@ -535,7 +535,7 @@ export default function AdminOrdersPage() {
 
 /* ─── Foam Order Drawer ─── */
 function FoamOrderDrawer({ order, onClose, onRefresh }: { order: FoamOrderWithProduct; onClose: () => void; onRefresh: () => void }) {
-  const [status, setStatus] = useState<FoamOrderStatus>(order.status);
+  const [status, setStatus] = useState<string>(order.status);
   const [saving, setSaving] = useState(false);
 
   const handleStatusChange = async () => {

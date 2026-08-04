@@ -11,7 +11,8 @@ function formatCurrency(n: number): string {
 }
 
 export function OrderPreview() {
-  const { cart, cartTotals, itemCount } = useOrder();
+ const { cart, cartTotals } = useOrder();
+const itemCount = cart.items.length;
 
   const warnings: string[] = [];
   if (itemCount === 0) warnings.push('السلة فارغة');

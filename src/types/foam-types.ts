@@ -30,6 +30,11 @@ export interface FoamOrderSeddar {
   length_meters: number;
   sort_order: number;
   created_at?: string;
+  // ✅ إضافات من قاعدة البيانات
+  length_cm?: number;
+  width_cm?: number;
+  height_cm?: number;
+  junction?: string;
 }
 
 export interface FoamOrder {
@@ -54,11 +59,13 @@ export interface FoamOrder {
   price_adjustment_value: number;
   price_adjustment_reason: string | null;
   final_total: number;
+  final_price: number; // alias
   customer_name: string;
   customer_phone: string | null;
   delivery_date: string | null;
   notes: string | null;
   deposit_amount: number;
+  deposit: number; // alias
   remaining_amount: number;
   status: string;
   created_by: string;
@@ -67,11 +74,22 @@ export interface FoamOrder {
   updated_at?: string;
   seddars?: FoamOrderSeddar[];
   supplier?: Supplier;
+  // ✅ حقول إضافية من قاعدة البيانات
+  total_meters: number;
+  base_price: number;
+  formage_enabled: boolean;
+  formage_count: number;
+  formage_type: string;
+  price_adjustment: number;
+  // ✅ relations
+  foam_products?: any;
+  suppliers?: any;
 }
 
 export interface Supplier {
   id: string;
   company_name: string;
+  name?: string; // ✅ إضافة لتوافق قاعدة البيانات
   phone?: string;
   email?: string;
   address?: string;

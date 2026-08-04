@@ -206,7 +206,7 @@ export default function OrdersRegistryPage() {
       const uMap: Record<string, DbUser> = {};
       (users || []).forEach((u) => { uMap[u.id] = u; });
       setUsersMap(uMap);
-      const types = [...new Set((parts || []).map((p) => p.part_type).filter(Boolean))];
+      const types = Array.from(new Set((parts || []).map((p: any) => p.part_type).filter(Boolean)));
       setProductTypes(types);
     }
     loadMeta();
@@ -221,16 +221,17 @@ export default function OrdersRegistryPage() {
       // Product type filter: get order IDs first
       if (filters.productType) {
         const { data } = await supabase.from("order_parts").select("order_id").eq("part_type", filters.productType);
-        orderIds = [...new Set((data || []).map((p) => p.order_id))];
-        if (orderIds.length === 0) { setOrders([]); setTotalCount(0); setLoading(false); return; }
+        const ids = Array.from(new Set((data || []).map((p: any) => p.order_id as string)));
+        if (ids.length === 0) { setOrders([]); setTotalCount(0); setLoading(false); return; }
+        orderIds = ids;
       }
 
       // Tailor filter: get order IDs first
       if (filters.tailorId) {
         const { data } = await supabase.from("order_parts").select("order_id").eq("tailor_id", filters.tailorId);
-        const tIds = [...new Set((data || []).map((p) => p.order_id))];
+        const tIds = Array.from(new Set((data || []).map((p: any) => p.order_id as string)));
         if (tIds.length === 0) { setOrders([]); setTotalCount(0); setLoading(false); return; }
-        orderIds = orderIds ? orderIds.filter((id) => tIds.includes(id)) : tIds;
+        orderIds = orderIds ? orderIds.filter((id: string) => tIds.includes(id)) : tIds;
         if (orderIds.length === 0) { setOrders([]); setTotalCount(0); setLoading(false); return; }
       }
 
@@ -444,7 +445,7 @@ export default function OrdersRegistryPage() {
   const exportCSV = () => {
     const headers = ["رقم الطلبية", "التاريخ", "الزبون", "الهاتف", "البائع", "المنتجات", "المجموع", "التسبيق", "المتبقي", "الحالة"];
     const rows = orders.map((o) => {
-      const types = [...new Set((o.payload as any)?.parts?.map((p: any) => partTypeLabels[p.type] || p.type) || ["—"])].join(" + ");
+      const types = Array.from(new Set((o.payload as any)?.parts?.map((p: any) => partTypeLabels[p.type] || p.type) || ["—"])).join(" + ");
       return [
         o.order_number, fd(o.created_at), o.customer_name || "—", o.customer_phone || "—",
         usersMap[o.created_by || ""]?.full_name || o.created_by || "—", types,
@@ -900,6 +901,7 @@ export default function OrdersRegistryPage() {
                         </div>
                       </div>
 
+                      
                       {/* Product Images from payload */}
                       {(() => {
                         const imgs: string[] = [];

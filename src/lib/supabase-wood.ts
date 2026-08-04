@@ -17,7 +17,7 @@ import type {
   WoodOrderSummary,
   WoodCalculationResult,
   WoodModelSnapshot,
-} from './wood-types';
+  } from '@/types/wood-types';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
@@ -119,7 +119,7 @@ export async function getModelExtras(modelId: string): Promise<WoodModelExtra[]>
 }
 
 export async function createModelExtra(
-  extra: Omit<WoodModelExtra, 'id' | 'created_at'>
+  extra: any
 ): Promise<WoodModelExtra> {
   const { data, error } = await supabaseWood
     .from('wood_model_extras')

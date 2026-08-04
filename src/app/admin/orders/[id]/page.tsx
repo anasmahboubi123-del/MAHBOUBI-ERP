@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import { PrintModal } from "@/features/documents/components/PrintModal";
+import type { DocumentType } from "@/features/order-center/types";
 
 /* ─── Types ─── */
 interface ChatMessage {
@@ -602,6 +603,63 @@ function FinancialTab({ order, payments }: { order: any; payments: PaymentUI[] }
   );
 }
 
+/* ═══════════════════════════════════════════
+   ✅ FIX: PrintModal props adapter
+   ═══════════════════════════════════════════ */
+function PrintModalAdapter({
+  order,
+  items,
+  onClose,
+}: {
+  order: any;
+  items: OrderItemUI[];
+  onClose: () => void;
+}) {
+  const [docType, setDocType] = useState<DocumentType>("devis");
+  const [includePrices, setIncludePrices] = useState(true);
+  const [includeDetails, setIncludeDetails] = useState(true);
+
+  const orderItemsForPrint = items.map((it) => ({
+    id: it.id,
+    orderItemId: it.id,
+    productType: it.productType,
+    productName: it.productName,
+    quantity: it.quantity,
+    unitPrice: it.unitPrice,
+    totalPrice: it.totalPrice,
+    details: it.details || {},
+    thumbnailUrl: it.thumbnailUrl,
+    addedAt: new Date().toISOString(),
+  }));
+
+  return (
+    <PrintModal
+      orderItems={orderItemsForPrint}
+      orderNumber={String(order.order_number || order.id?.slice(0, 8))}
+      customerName={order.customer_name || "—"}
+      customerPhone={order.customer_phone || "—"}
+      customerCity={order.customer_city}
+      totalAmount={order.total_amount || 0}
+      discountAmount={order.discount_amount || 0}
+      depositAmount={order.deposit_amount || 0}
+      deliveryCost={order.delivery_cost || 0}
+      documentType={docType}
+      printOptions={{
+        documentType: docType,
+        printVariant: "standard",
+        language: "ar",
+        includeProductionDetails: includeDetails,
+        includePrices,
+        includeCosts: false,
+        includeSignatures: true,
+        includeQrCode: false,
+        includeStamp: false,
+      }}
+      onClose={onClose}
+    />
+  );
+}
+
 /* ─── Main Page ─── */
 export default function OrderDetailPage() {
   const params = useParams();
@@ -918,17 +976,9 @@ export default function OrderDetailPage() {
 
       {/* Print Modal */}
       {showPrint && (
-        <PrintModal
-          orderId={order.id}
-          orderData={{
-            ...order,
-            items,
-            customer: { name: order.customer_name, phone: order.customer_phone, city: order.customer_city },
-            total: order.total_amount,
-            deposit: order.deposit_amount,
-            remaining: order.remaining_amount,
-          }}
-          isOpen={showPrint}
+        <PrintModalAdapter
+          order={order}
+          items={items}
           onClose={() => setShowPrint(false)}
         />
       )}

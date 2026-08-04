@@ -1,9 +1,9 @@
 /* ═══════════════════════════════════════════════════════════════
-   TYPES: Order Center — FIXED with flexible details/calculations
+   TYPES: Order Center — FIXED
    ═══════════════════════════════════════════════════════════════ */
 
 // ─── Product Types ───
-export type ProductType = 'salon' | 'khamiya' | 'wood' | 'foam' | 'tapis';
+export type ProductType = 'salon' | 'khamiya' | 'wood' | 'foam' | 'tapis' | 'accessoire';
 
 // ─── Document Types ───
 export type DocumentType = 'devis' | 'bon_de_commande' | 'facture';
@@ -22,12 +22,12 @@ export interface Customer {
   ice?: string;
   if?: string;
   rc?: string;
-   notes?: string;  
+  notes?: string;
 }
 
 // ─── Delivery ───
 export interface Delivery {
-  method: 'pickup' | 'delivery';
+  method: 'pickup' | 'delivery' | 'home_delivery' | 'carrier';
   expectedDate?: string;
   status: 'pending' | 'in_transit' | 'delivered';
   cost: number;
@@ -59,11 +59,12 @@ export interface ProductResult {
   quantity: number;
   unitPrice: number;
   totalPrice: number;
-  details: Record<string, any>;        // ← flexible: any object
-  calculations: Record<string, any>;   // ← flexible: any object
+  details: Record<string, any>;
+  calculations: Record<string, any>;
   productionDetails?: Record<string, any>;
   lineNotes?: string;
   lineDiscount?: number;
+  notes?: string;
   addedAt: string;
 }
 
@@ -149,4 +150,18 @@ export interface Order {
   createdAt: string;
   updatedAt?: string;
   items?: OrderItem[];
+}
+
+// ─── UnifiedOrder for OrderHistory ───
+export interface UnifiedOrder {
+  id: string;
+  orderNumber: string;
+  customer: {
+    name: string;
+    phone: string;
+  };
+  status: string;
+  total: number;
+  items: OrderItem[];
+  createdAt: string;
 }

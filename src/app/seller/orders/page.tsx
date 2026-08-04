@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useOrder } from '@/features/order-center/context/OrderContext';
+import { supabase } from '@/lib/supabase';
 import { Search, Filter, ArrowLeft, ShoppingCart, FileText } from 'lucide-react';
 
 interface OrderSummary {
@@ -20,7 +20,6 @@ interface OrderSummary {
 
 export default function SellerOrdersPage() {
   const router = useRouter();
-  const { loadOrders, isLoading: ctxLoading } = useOrder();
 
   const [orders, setOrders] = useState<OrderSummary[]>([]);
   const [filtered, setFiltered] = useState<OrderSummary[]>([]);
@@ -52,22 +51,43 @@ export default function SellerOrdersPage() {
   async function fetchOrders() {
     setLoading(true);
     try {
-      const data = await loadOrders();
-      const mapped: OrderSummary[] = (data || []).map((o) => ({
+      const { data: ordersData, error } = await supabase
+        .from('orders')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      // جلب عدد العناصر لكل طلب
+      const orderIds = (ordersData || []).map((o: any) => o.id);
+      const itemCounts: Record<string, number> = {};
+      if (orderIds.length > 0) {
+        const { data: itemsData } = await supabase
+          .from('order_items')
+          .select('order_id')
+          .in('order_id', orderIds);
+        (itemsData || []).forEach((item: any) => {
+          itemCounts[item.order_id] = (itemCounts[item.order_id] || 0) + 1;
+        });
+      }
+
+      const mapped: OrderSummary[] = (ordersData || []).map((o: any) => ({
         id: o.id,
-        orderNumber: o.orderNumber,
+        orderNumber: String(o.order_number || ''),
         status: o.status,
-        createdAt: o.createdAt,
-        customerName: o.customer?.name || '',
-        customerPhone: o.customer?.phone || '',
-        total: o.total,
-        depositAmount: o.depositAmount,
-        remaining: o.remaining,
-        itemCount: o.items?.length || 0,
+        createdAt: o.created_at,
+        customerName: o.customer_name || '',
+        customerPhone: o.customer_phone || '',
+        total: o.total || 0,
+        depositAmount: o.deposit || 0,
+        remaining: o.remaining_amount || (o.total - o.deposit) || 0,
+        itemCount: itemCounts[o.id] || 0,
       }));
+
       setOrders(mapped);
       setFiltered(mapped);
-    } catch {
+    } catch (err) {
+      console.error(err);
       setOrders([]);
       setFiltered([]);
     }
@@ -93,8 +113,6 @@ export default function SellerOrdersPage() {
     { label: 'قيد الإنتاج', count: orders.filter((o) => o.status === 'in_production').length, color: 'bg-purple-500' },
     { label: 'جاهز', count: orders.filter((o) => o.status === 'ready').length, color: 'bg-emerald-500' },
   ];
-
-  const isBusy = loading || ctxLoading;
 
   return (
     <div className="min-h-screen bg-[#F5F0E8]" dir="rtl">
@@ -157,7 +175,7 @@ export default function SellerOrdersPage() {
         </div>
 
         {/* Orders List */}
-        {isBusy ? (
+        {loading ? (
           <div className="text-center py-12 text-gray-500">جاري التحميل...</div>
         ) : filtered.length === 0 ? (
           <div className="text-center py-12">

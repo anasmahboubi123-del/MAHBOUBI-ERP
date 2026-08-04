@@ -4,7 +4,7 @@ import toast from 'react-hot-toast';
 import { Seddari, JunctionType } from '@/lib/types';
 import { DEFAULTS, seddariFabricCm, fmtM } from '@/lib/calculations';
 import Button from '@/components/ui/Button';
-import Card from '@/components/ui/Card';
+import Card from '@/components/ui/Card'
 
 const SCALE = 1.2; // بكسل لكل سنتيمتر
 

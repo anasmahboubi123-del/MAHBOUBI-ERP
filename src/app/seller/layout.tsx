@@ -10,7 +10,8 @@ const C = { green: "#1B5E38", gold: "#C9A84C", dark: "#0D1F17", cream: "#FAFAF8"
 
 function SellerLayoutInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { itemCount } = useOrder();
+const orderCtx = useOrder() as any;
+const itemCount = orderCtx.itemCount || orderCtx.orders?.length || 0;
 
   const nav = [
     { href: "/seller", label: "الرئيسية", icon: Home },

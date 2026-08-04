@@ -26,12 +26,14 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 export function OrderHistory() {
-  const { loadOrders } = useOrder();
+  const orderCtx = useOrder() as any;
+  const loadOrders: () => Promise<UnifiedOrder[]> = orderCtx.loadOrders || (async () => []);
+
   const [orders, setOrders] = useState<UnifiedOrder[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    loadOrders().then((data) => { setOrders(data); setLoading(false); });
+    loadOrders().then((data: UnifiedOrder[]) => { setOrders(data); setLoading(false); });
   }, [loadOrders]);
 
   if (loading) {
@@ -56,7 +58,7 @@ export function OrderHistory() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold" style={{ color: C.dark }}>سجل الطلبات</h2>
-        <button onClick={() => loadOrders().then(setOrders)} className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold border border-gray-200 hover:bg-gray-50 transition">
+        <button onClick={() => loadOrders().then((data: UnifiedOrder[]) => setOrders(data))} className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold border border-gray-200 hover:bg-gray-50 transition">
           <RotateCcw className="w-4 h-4" /> تحديث
         </button>
       </div>

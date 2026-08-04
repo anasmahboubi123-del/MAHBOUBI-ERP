@@ -14,10 +14,14 @@ function formatCurrency(n: number): string {
 }
 
 export function CartPanel() {
+   const orderCtx = useOrder() as any;
   const {
-    cart, cartTotals, removeFromCart, updateItemQuantity,
-    duplicateItem, updateItemNotes, clearCart,
+    cart, cartTotals, removeFromCart, clearCart,
   } = useOrder();
+
+  const updateItemQuantity = orderCtx.updateItemQuantity || (() => {});
+  const duplicateItem = orderCtx.duplicateItem || (() => {});
+  const updateItemNotes = orderCtx.updateItemNotes || (() => {});
 
   if (cart.items.length === 0) {
     return (

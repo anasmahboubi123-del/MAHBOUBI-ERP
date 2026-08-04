@@ -162,6 +162,29 @@ export async function deleteImage(bucket: string, path: string): Promise<void> {
   await supabase.storage.from(bucket).remove([path]);
 }
 
+// ─── ✅ NEW: uploadToBucket (مطلوب من ImageUploader وصفحات الطلبات) ───
+export async function uploadToBucket(
+  bucket: string,
+  path: string,
+  file: File | Blob | ArrayBuffer | Uint8Array,
+  options?: { contentType?: string; upsert?: boolean }
+): Promise<string | null> {
+  const { data, error } = await supabase.storage
+    .from(bucket)
+    .upload(path, file, {
+      upsert: options?.upsert ?? true,
+      contentType: options?.contentType,
+    });
+
+  if (error) {
+    console.error('uploadToBucket error:', error);
+    return null;
+  }
+
+  const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(data.path);
+  return urlData?.publicUrl ?? null;
+}
+
 // ─── Orders ───
 export type Order = {
   id: string; order_number: number; customer_id: string | null;
@@ -184,9 +207,39 @@ export async function createOrder(order: Partial<Order>): Promise<Order> {
   return data as Order;
 }
 
-export async function updateOrderStatus(orderId: string, status: string): Promise<void> {
-  const { error } = await supabase.from('orders').update({ status }).eq('id', orderId);
+export async function updateOrderStatus(orderId: string, status: string, table: string = 'orders'): Promise<void> {
+  const { error } = await supabase.from(table).update({ status }).eq('id', orderId);
   if (error) throw error;
+}
+
+// ─── ✅ NEW: saveKhamiyaOrder (مطلوب من app/api/orders/khamiya/route.ts) ───
+export type KhamiyaOrderPayload = {
+  customer_name?: string;
+  customer_phone?: string;
+  total: number;
+  deposit?: number;
+  delivery_date?: string;
+  notes?: string;
+  payload?: any;
+  created_by?: string;
+  [key: string]: any;
+};
+
+export async function saveKhamiyaOrder(orderData: KhamiyaOrderPayload): Promise<Order> {
+  const order: Partial<Order> = {
+    ...orderData,
+    status: 'pending',
+    priority: 'normal',
+  };
+
+  const { data, error } = await supabase
+    .from('orders')
+    .insert([order as any])
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data as Order;
 }
 
 // ─── Realtime Messages ───
@@ -196,6 +249,7 @@ export function subscribeToOrderMessages(orderId: string, callback: (msg: any) =
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `order_id=eq.${orderId}` }, callback)
     .subscribe();
 }
+
 export type AqiqShape = { id: string; name: string; price_per_meter: number | null; image_url: string | null; active: boolean | null; created_at: string | null; };
 export type KhamiyaAddition = { id: string; name: string; price: number | null; category: string | null; image_url: string | null; active: boolean | null; created_at: string | null; };
 export const fetchAqiqShapes = () => fetchTable<AqiqShape>('aqiq_shapes');

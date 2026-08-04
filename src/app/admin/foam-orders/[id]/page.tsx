@@ -4,13 +4,9 @@ import React, { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
-import type { FoamOrder, FoamProduct, FoamOrderSeddar, Supplier } from "@/types/foam-types";
+import type { FoamOrder, FoamOrderSeddar } from "@/types/foam-types";
 
-interface FoamOrderWithDetails extends FoamOrder {
-  foam_products?: FoamProduct | null;
-  suppliers?: Supplier | null;
-  seddars?: FoamOrderSeddar[];
-}
+interface FoamOrderWithDetails extends FoamOrder {}
 
 const STATUS_MAP: Record<string, { label: string; color: string; bg: string }> = {
   pending: { label: "معلق", color: "text-amber-700", bg: "bg-amber-100" },
@@ -32,6 +28,16 @@ function getDaysLeft(deliveryDate: string | null | undefined): number {
   const target = new Date(deliveryDate);
   target.setHours(0, 0, 0, 0);
   return Math.ceil((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+}
+
+function getSupplierName(order: FoamOrderWithDetails | null): string {
+  if (!order?.suppliers) return "المورد";
+  return order.suppliers.name ?? order.suppliers.company_name ?? "المورد";
+}
+
+function getSupplierPhone(order: FoamOrderWithDetails | null): string {
+  if (!order?.suppliers) return "";
+  return order.suppliers.phone ?? order.suppliers.mobile ?? order.suppliers.telephone ?? "";
 }
 
 export default function FoamOrderDetailPage() {
@@ -60,7 +66,7 @@ export default function FoamOrderDetailPage() {
           .eq("foam_order_id", orderId)
           .order("sort_order", { ascending: true });
 
-        setOrder({ ...orderData, seddars: seddarsData || [] });
+        setOrder({ ...orderData, seddars: (seddarsData || []) as FoamOrderSeddar[] } as FoamOrderWithDetails);
         setNewStatus(orderData.status);
       }
     } catch (err) {
@@ -94,12 +100,15 @@ export default function FoamOrderDetailPage() {
   };
 
   const sendWhatsAppToSupplier = () => {
-    if (!order?.suppliers?.phone) {
+    const phone = getSupplierPhone(order);
+    if (!phone) {
       alert("لا يوجد هاتف للمورد");
       return;
     }
-    const msg = `مرحباً ${order.suppliers.name}،\nطلبية بونج جديدة:\nرقم: FOAM-${order.order_number}\nالمنتج: ${order.foam_products?.name || "—"}\nالارتفاع: ${order.height_cm}سم | العرض: ${order.width_cm}سم\nالكمية: ${order.total_meters} متر\nالسعر النهائي: ${formatCurrency(order.final_price || 0)}\nتاريخ التسليم: ${order.delivery_date || "—"}`;
-    window.open(`https://wa.me/${order.suppliers.phone.replace(/\D/g, "")}?text=${encodeURIComponent(msg)}`, "_blank");
+    const supplierName = getSupplierName(order);
+    const o = order;
+    const msg = `مرحباً ${supplierName}،\nطلبية بونج جديدة:\nرقم: FOAM-${o?.order_number}\nالمنتج: ${o?.foam_products?.name || "—"}\nالارتفاع: ${o?.height_cm}سم | العرض: ${o?.width_cm}سم\nالكمية: ${o?.total_meters} متر\nالسعر النهائي: ${formatCurrency(o?.final_price || 0)}\nتاريخ التسليم: ${o?.delivery_date || "—"}`;
+    window.open(`https://wa.me/${phone.replace(/\D/g, "")}?text=${encodeURIComponent(msg)}`, "_blank");
   };
 
   const printInvoice = () => window.print();
@@ -175,7 +184,7 @@ export default function FoamOrderDetailPage() {
             <div><p className="text-xs text-gray-500">المنتج</p><p className="font-bold text-gray-800">{order.foam_products?.name || "—"}</p></div>
             <div><p className="text-xs text-gray-500">الارتفاع</p><p className="font-bold text-gray-800">{order.height_cm} سم</p></div>
             <div><p className="text-xs text-gray-500">العرض</p><p className="font-bold text-gray-800">{order.width_cm} سم</p></div>
-            <div><p className="text-xs text-gray-500">المورد</p><p className="font-bold text-gray-800">{order.suppliers?.name || "—"}</p></div>
+            <div><p className="text-xs text-gray-500">المورد</p><p className="font-bold text-gray-800">{getSupplierName(order)}</p></div>
             <div><p className="text-xs text-gray-500">الفورمجة</p><p className="font-bold text-gray-800">{order.formage_enabled ? `نعم (${order.formage_count} ${order.formage_type === "square" ? "مربع" : "مثلث"})` : "لا"}</p></div>
             <div><p className="text-xs text-gray-500">إجمالي الأطوال</p><p className="font-bold text-gray-800">{order.total_meters} متر</p></div>
           </div>
@@ -205,8 +214,8 @@ export default function FoamOrderDetailPage() {
             <div className="flex justify-between text-sm"><span className="text-gray-500">السعر الأساسي</span><span className="font-bold">{formatCurrency(order.base_price || 0)}</span></div>
             {order.price_adjustment !== 0 && (
               <div className="flex justify-between text-sm">
-                <span className="text-gray-500">{order.price_adjustment && order.price_adjustment > 0 ? "زيادة" : "خصم"}</span>
-                <span className={`font-bold ${order.price_adjustment && order.price_adjustment > 0 ? "text-red-600" : "text-green-600"}`}>{formatCurrency(Math.abs(order.price_adjustment || 0))}</span>
+                <span className="text-gray-500">{order.price_adjustment > 0 ? "زيادة" : "خصم"}</span>
+                <span className={`font-bold ${order.price_adjustment > 0 ? "text-red-600" : "text-green-600"}`}>{formatCurrency(Math.abs(order.price_adjustment || 0))}</span>
               </div>
             )}
             <div className="flex justify-between text-sm"><span className="text-gray-500">السعر النهائي</span><span className="font-bold text-[#1B5E3B]">{formatCurrency(order.final_price || 0)}</span></div>

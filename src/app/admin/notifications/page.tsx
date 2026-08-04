@@ -136,7 +136,7 @@ export default function AdminNotificationsPage() {
       }));
 
       setOrders(ordersWithParts);
-      setFoamOrders(foamData || []);
+      setFoamOrders((foamData || []) as FoamOrderWithProduct[]);
     } catch (err) {
       console.error("فشل تحميل الإشعارات:", err);
     } finally {
@@ -301,7 +301,8 @@ export default function AdminNotificationsPage() {
         id: `foam-today-${o.id}`,
         type: "warning",
         title: `تسليم بونج اليوم — ${o.customer_name || "—"}`,
-        message: `FOAM-${o.order_number} موعد تسليمه اليوم. المتبقي: ${formatCurrency((o.final_price || 0) - (o.deposit || 0))}.`,
+        // ✅ FIX: final_total بدلاً من final_price, deposit_amount بدلاً من deposit
+        message: `FOAM-${o.order_number} موعد تسليمه اليوم. المتبقي: ${formatCurrency((o.final_total || 0) - (o.deposit_amount || 0))}.`,
         action: `/admin/foam-orders/${o.id}`,
         actionLabel: "فتح الطلب",
         orderId: o.id,
@@ -367,7 +368,7 @@ export default function AdminNotificationsPage() {
       if (pa !== pb) return pa - pb;
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
-  }, [orders, todayStr]);
+  }, [orders, foamOrders, todayStr]);
 
   const filtered = useMemo(() => {
     if (activeFilter === "all") return notifications;

@@ -70,7 +70,7 @@ interface PrintModalProps {
 /* ═══════════════════════════════════════════════════════════
    PrintModal
    ═══════════════════════════════════════════════════════════ */
-export default function PrintModal(props: PrintModalProps) {
+function PrintModal(props: PrintModalProps) {
   const {
     orderItems, orderNumber, customerName, customerPhone, customerCity,
     totalAmount, discountAmount = 0, depositAmount = 0, deliveryCost = 0,
@@ -651,3 +651,9 @@ function DetailRow({ icon, label, value }: { icon?: React.ReactNode; label: stri
     </div>
   );
 }
+
+/* ═══════════════════════════════════════════
+   ✅ FIX: Named export for compatibility
+   ═══════════════════════════════════════════ */
+export { PrintModal };
+export default PrintModal;

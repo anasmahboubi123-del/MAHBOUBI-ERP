@@ -4,7 +4,7 @@ import React, { useRef } from 'react';
 import { Printer, Download } from 'lucide-react';
 import { OrderDraft } from '@/lib/types';
 import { seddariFabricCm, DEFAULTS, fmtDh, fmtM } from '@/lib/calculations';
-import { CustomAddition } from './StageSummary';
+import { CustomAddition } from './hooks/StageSummary';
 import { useInvoiceTemplate } from './hooks/useInvoiceTemplate';
 
 interface InvoiceTemplateProps {
