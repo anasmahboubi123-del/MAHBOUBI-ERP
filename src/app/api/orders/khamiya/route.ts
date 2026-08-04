@@ -1,3 +1,5 @@
+﻿export const dynamic = 'force-dynamic';
+
 import { NextRequest, NextResponse } from 'next/server';
 import { saveKhamiyaOrder } from '@/lib/supabase';
 import { sendWelcomeWhatsApp } from '@/lib/messaging';
