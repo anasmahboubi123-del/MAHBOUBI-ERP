@@ -21,7 +21,6 @@ import {
 } from "@/lib/supabase-seller";
 
 // ─── المنتجات الرئيسية (صفحات محلية) ───
-// الصور من Supabase Storage bucket: site-assets
 const MAIN_PRODUCTS = [
   {
     id: "khamiya",
@@ -58,14 +57,22 @@ const MAIN_PRODUCTS = [
     imagePath: "categories/bonj.jpg",
     icon: "🧽",
   },
+  {
+    id: "romani",
+    name: "الصالون الرومي",
+    href: "/seller/romani",
+    imagePath: "categories/romani.jpg",
+    icon: "🏛️",
+  },
 ];
 
+// ─── بيانات وهمية للألبوم (مع الفئات) ───
 const MOCK_ALBUM: AlbumItem[] = [
-  { id: "a1", title: "صالون كلاسيكي ذهبي", price: 12500, image_url: null, created_at: "2026-07-20" },
-  { id: "a2", title: "زربية حريرية 4×5م", price: 8500, image_url: null, created_at: "2026-07-18" },
-  { id: "a3", title: "خامية عصرية بيج", price: 3200, image_url: null, created_at: "2026-07-15" },
-  { id: "a4", title: "صالون أزرق ملكي", price: 15000, image_url: null, created_at: "2026-07-10" },
-  { id: "a5", title: "بونج عالي الكثافة", price: 1800, image_url: null, created_at: "2026-07-05" },
+  { id: "a1", title: "صالون كلاسيكي ذهبي", price: 12500, image_url: null, category: "salon", created_at: "2026-07-20" },
+  { id: "a2", title: "زربية حريرية 4×5م", price: 8500, image_url: null, category: "tapis", created_at: "2026-07-18" },
+  { id: "a3", title: "خامية عصرية بيج", price: 3200, image_url: null, category: "khamiya", created_at: "2026-07-15" },
+  { id: "a4", title: "صالون أزرق ملكي", price: 15000, image_url: null, category: "salon", created_at: "2026-07-10" },
+  { id: "a5", title: "بونج عالي الكثافة", price: 1800, image_url: null, category: "bonj", created_at: "2026-07-05" },
 ];
 
 export default function SellerDashboard() {
@@ -183,7 +190,7 @@ export default function SellerDashboard() {
                 </div>
               </div>
 
-              {/* ─── منتجاتنا الرئيسية (5 بطاقات) ─── */}
+              {/* ─── منتجاتنا الرئيسية ─── */}
               <section>
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="text-lg font-bold text-gray-900">منتجاتنا</h2>
@@ -202,7 +209,6 @@ export default function SellerDashboard() {
                           href={product.href}
                           className="group relative overflow-hidden rounded-[20px] bg-white shadow-sm hover:shadow-xl transition-all duration-500 text-right flex flex-col block h-full"
                         >
-                          {/* Image */}
                           <div className="relative h-44 sm:h-52 overflow-hidden bg-[#F5F0E8]">
                             {imageUrl ? (
                               <Image
@@ -217,11 +223,8 @@ export default function SellerDashboard() {
                                 {product.icon}
                               </div>
                             )}
-                            {/* Dark bottom overlay */}
                             <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-[#1B5E3B]/90 to-transparent" />
                           </div>
-
-                          {/* Title overlay */}
                           <div className="absolute bottom-0 inset-x-0 p-4 text-center">
                             <h3 className="font-bold text-white text-sm sm:text-base">{product.name}</h3>
                           </div>
@@ -232,7 +235,7 @@ export default function SellerDashboard() {
                 </div>
               </section>
 
-              {/* ─── منتجات مميزة (من Supabase) ─── */}
+              {/* ─── منتجات مميزة ─── */}
               <section>
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-2">
@@ -263,7 +266,7 @@ export default function SellerDashboard() {
                 )}
               </section>
 
-              {/* ─── ألبوم الأعمال ─── */}
+              {/* ─── ألبوم الأعمال (مقسم لـ 6 أقسام) ─── */}
               <AlbumSection items={albumItems} loading={loading} />
             </motion.div>
           )}
@@ -295,7 +298,6 @@ export default function SellerDashboard() {
                 </h1>
               </div>
 
-              {/* Products Grid */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                 {productsLoading
                   ? Array.from({ length: 8 }).map((_, i) => <ProductCardSkeleton key={i} index={i} />)

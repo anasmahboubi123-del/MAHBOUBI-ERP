@@ -137,7 +137,6 @@ export default function AdminOrdersPage() {
   const [selectedOrder, setSelectedOrder] = useState<OrderWithParts | null>(null);
   const [showDrawer, setShowDrawer] = useState(false);
 
-  /* Fetch orders + parts + tailors + foam orders */
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
@@ -184,7 +183,6 @@ export default function AdminOrdersPage() {
     loadData();
   }, [loadData]);
 
-  /* Filter */
   const filtered = useMemo(() => {
     return orders.filter((o) => {
       const matchTab = activeTab === "all" || o.status === activeTab;
@@ -198,7 +196,6 @@ export default function AdminOrdersPage() {
     });
   }, [activeTab, search, orders]);
 
-  /* Counts */
   const counts = useMemo(() => {
     const c: Record<string, number> = { all: orders.length };
     orders.forEach((o) => {
@@ -207,7 +204,6 @@ export default function AdminOrdersPage() {
     return c;
   }, [orders]);
 
-  /* Foam Counts */
   const foamCounts = useMemo(() => {
     const c: Record<string, number> = { all: foamOrders.length };
     foamOrders.forEach((o) => {
@@ -216,7 +212,6 @@ export default function AdminOrdersPage() {
     return c;
   }, [foamOrders]);
 
-  /* Foam Filter */
   const foamFiltered = useMemo(() => {
     return foamOrders.filter((o) => {
       const matchTab = foamActiveTab === "all" || o.status === foamActiveTab;
@@ -226,7 +221,6 @@ export default function AdminOrdersPage() {
     });
   }, [foamActiveTab, search, foamOrders]);
 
-  /* Mustafa reminders (rembourrage pending, <=3 days) */
   const mustafaReminders = useMemo(() => {
     const reminders: { orderId: string; customer: string; daysLeft: number; partLabel: string }[] = [];
     orders.forEach((o) => {
@@ -248,7 +242,6 @@ export default function AdminOrdersPage() {
     return reminders;
   }, [orders]);
 
-  /* Tapis reminders (tapis pending, <=5 days) */
   const tapisReminders = useMemo(() => {
     const reminders: { orderId: string; customer: string; daysLeft: number; partLabel: string; deliveryDate: string }[] = [];
     orders.forEach((o) => {
@@ -302,7 +295,6 @@ export default function AdminOrdersPage() {
             <Link href="/admin" className="text-sm text-[#6B7B6E] hover:text-[#1B5E3B]">← رجوع للوحة</Link>
           </div>
 
-          {/* View Mode Toggle */}
           <div className="flex bg-[#F5F0E8] rounded-xl p-1 mb-4">
             <button onClick={() => setViewMode("regular")} className={`flex-1 py-2 rounded-lg text-sm font-bold transition ${viewMode === "regular" ? "bg-white text-[#1B5E3B] shadow-sm" : "text-gray-500 hover:text-gray-700"}`}>
               📦 الطلبيات العامة
@@ -342,7 +334,6 @@ export default function AdminOrdersPage() {
         </div>
       </header>
 
-      {/* Tapis reminders — CALL COMPANY */}
       {tapisReminders.length > 0 && (
         <div className="max-w-7xl mx-auto px-4 mt-4">
           <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4">
@@ -372,7 +363,6 @@ export default function AdminOrdersPage() {
         </div>
       )}
 
-      {/* Mustafa reminders */}
       {mustafaReminders.length > 0 && (
         <div className="max-w-7xl mx-auto px-4 mt-4">
           <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4">
@@ -413,6 +403,11 @@ export default function AdminOrdersPage() {
                 const partsSummary = getPartsSummary(order.parts);
                 const depositPercent = (order.total_amount || 0) > 0 ? Math.round(((order.deposit_amount || 0) / (order.total_amount || 0)) * 100) : 0;
                 const hasTapis = order.parts.some((p) => p.part_type === "tapis");
+                // ✅ جديد: التحقق من وجود رومي
+                // details can be JSON (string|number|boolean|object|array). Type-guard to ensure it's an object with isRomani
+                const hasRomani = order.parts.some((p) =>
+                  p.part_type === "salon" && typeof p.details === "object" && p.details !== null && (p.details as any).isRomani
+                );
 
                 return (
                   <div
@@ -432,6 +427,9 @@ export default function AdminOrdersPage() {
                       <div className="flex items-center gap-2">
                         {hasTapis && (
                           <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-bold">🧶 زربية</span>
+                        )}
+                        {hasRomani && (
+                          <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-bold">🛋️ رومي</span>
                         )}
                         <span className="text-xs text-gray-400 font-mono">ORD-{order.order_number}</span>
                       </div>
@@ -494,7 +492,6 @@ export default function AdminOrdersPage() {
             )}
           </>
         ) : (
-          /* ─── Foam Orders Grid ─── */
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {foamFiltered.map((order) => {
               const daysLeft = getDaysLeft(order.delivery_date);
@@ -680,7 +677,6 @@ function QuickReviewDrawer({
         </div>
 
         <div className="p-4 space-y-4">
-          {/* Tapis Alert */}
           {needsTapisCall && (
             <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4">
               <div className="flex items-start gap-3">
@@ -704,7 +700,6 @@ function QuickReviewDrawer({
             </div>
           )}
 
-          {/* Customer */}
           <div className="bg-white rounded-2xl p-4 shadow-sm border border-[#E8E4DC]">
             <h3 className="text-sm font-bold text-[#1B5E3B] mb-3">👤 معلومات الزبون</h3>
             <p className="font-bold text-lg">{order.customer_name || "—"}</p>
@@ -721,7 +716,6 @@ function QuickReviewDrawer({
             </div>
           </div>
 
-          {/* Delivery Date */}
           <div className="bg-white rounded-2xl p-4 shadow-sm border border-[#E8E4DC]">
             <h3 className="text-sm font-bold text-[#1B5E3B] mb-3">📅 موعد التسليم</h3>
             <input
@@ -738,7 +732,6 @@ function QuickReviewDrawer({
             </button>
           </div>
 
-          {/* Parts */}
           <div className="bg-white rounded-2xl p-4 shadow-sm border border-[#E8E4DC]">
             <h3 className="text-sm font-bold text-[#1B5E3B] mb-3">📦 أجزاء الطلبية ({order.parts.length})</h3>
             <div className="space-y-3">
@@ -807,7 +800,6 @@ function QuickReviewDrawer({
             </div>
           </div>
 
-          {/* Quick Note */}
           <div className="bg-white rounded-2xl p-4 shadow-sm border border-[#E8E4DC]">
             <h3 className="text-sm font-bold text-[#1B5E3B] mb-3">📝 ملاحظة سريعة للخياط</h3>
             <textarea
@@ -846,7 +838,6 @@ function QuickReviewDrawer({
             </button>
           </div>
 
-          {/* Actions */}
           <div className="flex gap-3 pt-2">
             <button onClick={onClose} className="flex-1 py-3 bg-white border border-[#E8E4DC] text-gray-600 rounded-xl text-sm font-bold hover:bg-[#F5F0E8] transition">
               ❌ إلغاء

@@ -1,250 +1,292 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
+import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
-import { Upload, Trash2, ImageIcon, Plus, X } from "lucide-react";
+import { Loader2, Trash2, Upload, ImageOff, X } from "lucide-react";
 import Image from "next/image";
-import { AlbumItem } from "@/types/seller.types";
+
 import {
   fetchAlbumItems,
   addAlbumItem,
   deleteAlbumItem,
   uploadImageToStorage,
   getPublicImageUrl,
+  ALBUM_CATEGORIES,
+  AlbumCategory,
 } from "@/lib/supabase-seller";
+import { AlbumItem } from "@/types/seller.types";
 
 export default function AdminAlbumPage() {
-  const [items, setItems] = useState<AlbumItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [uploading, setUploading] = useState(false);
-
-  // Form state
-  const [showForm, setShowForm] = useState(false);
+  const [images, setImages] = useState<AlbumItem[]>([]);
   const [title, setTitle] = useState("");
   const [price, setPrice] = useState("");
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [category, setCategory] = useState<AlbumCategory>("salon");
+  const [preview, setPreview] = useState<string | null>(null);
+  const [file, setFile] = useState<File | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const [filterCategory, setFilterCategory] = useState<AlbumCategory | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
-  const loadItems = useCallback(async () => {
+  const loadImages = useCallback(async () => {
     setLoading(true);
-    const data = await fetchAlbumItems();
-    setItems(data);
+    try {
+      const data = await fetchAlbumItems(filterCategory || undefined);
+      setImages(data || []); // ← تأكد من عدم كونها undefined
+    } catch {
+      setImages([]);
+    }
     setLoading(false);
-  }, []);
+  }, [filterCategory]);
 
   useEffect(() => {
-    loadItems();
-  }, [loadItems]);
+    loadImages();
+  }, [loadImages]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setSelectedFile(file);
-      setPreviewUrl(URL.createObjectURL(file));
+    const selectedFile = e.target.files?.[0];
+    if (!selectedFile) return;
+    if (!selectedFile.type.startsWith("image/")) {
+      alert("صورة فقط");
+      return;
     }
+    if (selectedFile.size > 5 * 1024 * 1024) {
+      alert("أقل من 5MB");
+      return;
+    }
+    setFile(selectedFile);
+    const reader = new FileReader();
+    reader.onloadend = () => setPreview(reader.result as string);
+    reader.readAsDataURL(selectedFile);
   };
 
-  const handleSubmit = async () => {
-    if (!title.trim() || !price || !selectedFile) return;
-
+  const addImage = async () => {
+    if (!file || !title.trim() || !price.trim()) {
+      alert("املأ جميع الحقول");
+      return;
+    }
     setUploading(true);
     try {
-      const imagePath = await uploadImageToStorage("seller-album", selectedFile);
-      if (imagePath) {
-        const newItem = await addAlbumItem({
-          title: title.trim(),
-          price: Number(price),
-          image_url: imagePath,
-        });
-        if (newItem) {
-          setItems((prev) => [newItem, ...prev]);
-          setTitle("");
-          setPrice("");
-          setSelectedFile(null);
-          setPreviewUrl(null);
-          setShowForm(false);
-        }
+      const uploadedName = await uploadImageToStorage('seller-album', file);
+      if (!uploadedName) {
+        alert("فشل رفع الصورة");
+        setUploading(false);
+        return;
       }
-    } finally {
-      setUploading(false);
+      const imageUrl = getPublicImageUrl('seller-album', uploadedName);
+      const result = await addAlbumItem({
+        title: title.trim(),
+        price: parseFloat(price),
+        category,
+        image_url: imageUrl,
+      });
+      if (!result) {
+        alert("فشل الحفظ");
+        setUploading(false);
+        return;
+      }
+      setTitle("");
+      setPrice("");
+      setPreview(null);
+      setFile(null);
+      if (fileRef.current) fileRef.current.value = "";
+      await loadImages();
+    } catch {
+      alert("خطأ");
     }
+    setUploading(false);
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm("هل أنت متأكد من حذف هذه الصورة؟")) return;
-    const ok = await deleteAlbumItem(id);
-    if (ok) {
-      setItems((prev) => prev.filter((i) => i.id !== id));
+  const handleDelete = async (image: AlbumItem) => {
+    if (!confirm(`حذف "${image.title}"؟`)) return;
+    setDeleting(image.id);
+    try {
+      await deleteAlbumItem(image.id);
+      await loadImages();
+    } catch {
+      alert("خطأ في الحذف");
     }
+    setDeleting(null);
   };
+
+  const filteredImages = filterCategory
+    ? images.filter((i) => i.category === filterCategory)
+    : images;
 
   return (
-    <div className="min-h-screen bg-[#FAFAF8]" dir="rtl">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">إدارة ألبوم البائع</h1>
-            <p className="text-sm text-gray-500 mt-1">أضف أو احذف صوراً من ألبوم الأعمال المعروض للبائع</p>
+    <div className="min-h-screen bg-[#F5F0E8] p-4 sm:p-6" dir="rtl">
+      <header className="bg-[#1B5E3B] text-white p-4 rounded-2xl mb-6 flex justify-between shadow-lg">
+        <h1 className="font-bold text-xl">🖼️ إدارة ألبوم الصور</h1>
+        <Link href="/admin" className="text-[#C9A84C] hover:text-white font-bold">← رجوع</Link>
+      </header>
+
+      <div className="max-w-5xl mx-auto space-y-8">
+        {/* Form */}
+        <div className="bg-white rounded-2xl p-6 shadow-lg border border-[#E8E4DC]">
+          <h2 className="text-lg font-bold text-[#1B5E3B] mb-4 flex items-center gap-2">
+            <Upload className="w-5 h-5" /> إضافة صورة جديدة
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm text-[#6B7B6E] mb-1 font-bold">القسم</label>
+              <select
+                value={category}
+                onChange={(e) => setCategory(e.target.value as AlbumCategory)}
+                className="w-full p-3 rounded-xl border border-[#E8E4DC] bg-[#F5F0E8] text-[#1B5E3B] font-bold"
+              >
+                {ALBUM_CATEGORIES.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.icon} {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm text-[#6B7B6E] mb-1 font-bold">اسم الصنف</label>
+              <input
+                type="text"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="صالون كلاسيكي ذهبي"
+                className="w-full p-3 rounded-xl border border-[#E8E4DC] bg-[#F5F0E8] text-[#1B5E3B] font-bold"
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-[#6B7B6E] mb-1 font-bold">السعر (درهم)</label>
+              <input
+                type="number"
+                value={price}
+                onChange={(e) => setPrice(e.target.value)}
+                placeholder="12500"
+                min="0"
+                className="w-full p-3 rounded-xl border border-[#E8E4DC] bg-[#F5F0E8] text-[#1B5E3B] font-bold"
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-[#6B7B6E] mb-1 font-bold">الصورة</label>
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/*"
+                onChange={handleFileChange}
+                className="w-full p-3 rounded-xl border border-[#E8E4DC] bg-white file:bg-[#1B5E3B] file:text-white file:px-4 file:py-2 file:rounded-lg file:border-0"
+              />
+            </div>
           </div>
+
+          {preview && (
+            <div className="mt-4 relative w-48 h-48 rounded-xl overflow-hidden border-2 border-[#C9A84C]">
+              <Image src={preview} alt="معاينة" fill className="object-cover" />
+              <button
+                onClick={() => {
+                  setPreview(null);
+                  setFile(null);
+                  if (fileRef.current) fileRef.current.value = "";
+                }}
+                className="absolute top-2 left-2 w-8 h-8 bg-red-500 text-white rounded-full flex items-center justify-center"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+
           <button
-            onClick={() => setShowForm(true)}
-            className="flex items-center gap-2 px-4 py-2.5 bg-[#1B5E3B] text-white rounded-xl font-medium hover:bg-[#145030] transition-colors"
+            onClick={addImage}
+            disabled={uploading || !preview || !title.trim() || !price.trim()}
+            className="mt-4 w-full py-3 bg-[#1B5E3B] text-white rounded-xl font-bold hover:bg-[#C9A84C] transition disabled:opacity-50 flex items-center justify-center gap-2"
           >
-            <Plus className="w-4 h-4" />
-            <span>إضافة صورة</span>
+            {uploading ? (
+              <>
+                <Loader2 className="w-5 h-5 animate-spin" /> جاري الرفع...
+              </>
+            ) : (
+              "➕ إضافة للألبوم"
+            )}
           </button>
         </div>
 
-        {/* Upload Form */}
-        <AnimatePresence>
-          {showForm && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: "auto" }}
-              exit={{ opacity: 0, height: 0 }}
-              className="mb-8 overflow-hidden"
-            >
-              <div className="bg-white rounded-[20px] shadow-sm p-6 border border-gray-100">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="font-bold text-gray-900">صورة جديدة</h3>
-                  <button
-                    onClick={() => setShowForm(false)}
-                    className="p-1.5 rounded-lg hover:bg-gray-100"
-                  >
-                    <X className="w-4 h-4 text-gray-500" />
-                  </button>
-                </div>
+        {/* Gallery */}
+        <div className="bg-white rounded-2xl p-6 shadow-lg border border-[#E8E4DC]">
+          <div className="flex flex-col sm:flex-row justify-between gap-4 mb-4">
+            <h2 className="text-lg font-bold text-[#1B5E3B]">
+              🖼️ الصور ({filteredImages.length})
+            </h2>
+            <div className="flex gap-2 overflow-x-auto">
+              <button
+                onClick={() => setFilterCategory(null)}
+                className={`px-3 py-1.5 rounded-lg text-sm font-bold ${filterCategory === null ? "bg-[#1B5E3B] text-white" : "bg-[#F5F0E8] text-[#1B5E3B]"}`}
+              >
+                الكل
+              </button>
+              {ALBUM_CATEGORIES.map((c) => (
+                <button
+                  key={c.id}
+                  onClick={() => setFilterCategory(c.id)}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-bold whitespace-nowrap ${filterCategory === c.id ? "bg-[#1B5E3B] text-white" : "bg-[#F5F0E8] text-[#1B5E3B]"}`}
+                >
+                  {c.icon} {c.name}
+                </button>
+              ))}
+            </div>
+          </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* Image Upload */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">الصورة</label>
-                    <div className="relative">
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={handleFileChange}
-                        className="hidden"
-                        id="album-image"
-                      />
-                      <label
-                        htmlFor="album-image"
-                        className="flex flex-col items-center justify-center w-full h-48 border-2 border-dashed border-gray-300 rounded-xl cursor-pointer hover:border-[#1B5E3B] hover:bg-[#1B5E3B]/5 transition-colors"
-                      >
-                        {previewUrl ? (
-                          <Image
-                            src={previewUrl}
-                            alt="Preview"
-                            width={200}
-                            height={150}
-                            className="h-full w-full object-cover rounded-xl"
-                          />
-                        ) : (
-                          <>
-                            <Upload className="w-8 h-8 text-gray-400 mb-2" />
-                            <span className="text-sm text-gray-500">اضغط لرفع صورة</span>
-                          </>
-                        )}
-                      </label>
+          {loading ? (
+            <div className="flex justify-center py-16">
+              <Loader2 className="w-10 h-10 text-[#1B5E3B] animate-spin" />
+            </div>
+          ) : filteredImages.length === 0 ? (
+            <div className="text-center py-16">
+              <ImageOff className="w-16 h-16 text-gray-200 mx-auto mb-4" />
+              <p className="text-[#6B7B6E]">لا توجد صور</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+              {filteredImages.map((img) => (
+                <div
+                  key={img.id}
+                  className="relative aspect-square rounded-xl overflow-hidden border border-[#E8E4DC] group bg-white"
+                >
+                  {img.image_url ? (
+                    <Image
+                      src={img.image_url}
+                      alt={img.title}
+                      fill
+                      className="object-cover"
+                      sizes="25vw"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center bg-gray-100">
+                      <ImageOff className="w-10 h-10 text-gray-300" />
                     </div>
-                  </div>
-
-                  {/* Details */}
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">العنوان</label>
-                      <input
-                        type="text"
-                        value={title}
-                        onChange={(e) => setTitle(e.target.value)}
-                        placeholder="مثال: صالون كلاسيكي ذهبي"
-                        className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#1B5E3B]/20"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">السعر (د.م)</label>
-                      <input
-                        type="number"
-                        value={price}
-                        onChange={(e) => setPrice(e.target.value)}
-                        placeholder="12500"
-                        className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#1B5E3B]/20"
-                      />
-                    </div>
+                  )}
+                  <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-1 p-2">
+                    <p className="text-white text-xs font-bold text-center">{img.title}</p>
+                    <p className="text-[#C9A84C] font-bold text-sm">
+                      {img.price?.toLocaleString("ar-MA")} درهم
+                    </p>
                     <button
-                      onClick={handleSubmit}
-                      disabled={!title.trim() || !price || !selectedFile || uploading}
-                      className="w-full py-3 bg-[#1B5E3B] text-white rounded-xl font-semibold hover:bg-[#145030] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      onClick={() => handleDelete(img)}
+                      disabled={deleting === img.id}
+                      className="mt-1 px-3 py-1 bg-red-500 text-white rounded-lg text-xs flex items-center gap-1 disabled:opacity-50"
                     >
-                      {uploading ? "جاري الرفع..." : "حفظ الصورة"}
+                      {deleting === img.id ? (
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                      ) : (
+                        <Trash2 className="w-3 h-3" />
+                      )}
+                      حذف
                     </button>
                   </div>
+                  <div className="absolute top-2 left-2 bg-[#1B5E3B]/80 text-white text-[10px] px-2 py-0.5 rounded-md">
+                    {ALBUM_CATEGORIES.find((c) => c.id === img.category)?.name}
+                  </div>
                 </div>
-              </div>
-            </motion.div>
+              ))}
+            </div>
           )}
-        </AnimatePresence>
-
-        {/* Album Grid */}
-        {loading ? (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <div key={i} className="bg-gray-100 rounded-[16px] h-48 animate-pulse" />
-            ))}
-          </div>
-        ) : items.length === 0 ? (
-          <div className="text-center py-20 bg-white rounded-[20px] shadow-sm">
-            <ImageIcon className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-            <p className="text-gray-400 text-lg">الألبوم فارغ</p>
-            <p className="text-gray-300 text-sm mt-1">أضف صوراً من الزر أعلاه</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
-            {items.map((item) => {
-              const imageUrl = getPublicImageUrl("seller-album", item.image_url);
-              return (
-                <motion.div
-                  key={item.id}
-                  layout
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  className="group relative overflow-hidden rounded-[16px] bg-white shadow-sm"
-                >
-                  <div className="relative h-48 overflow-hidden bg-[#F5F0E8]">
-                    {imageUrl ? (
-                      <Image
-                        src={imageUrl}
-                        alt={item.title}
-                        fill
-                        className="object-cover"
-                        sizes="20vw"
-                      />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center text-4xl">🛋️</div>
-                    )}
-                    <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/70 to-transparent" />
-                  </div>
-
-                  <div className="absolute bottom-0 inset-x-0 p-3">
-                    <h4 className="font-bold text-white text-xs truncate">{item.title}</h4>
-                    <p className="text-[#C9A84C] text-xs font-semibold">
-                      {item.price.toLocaleString("ar-MA")} د.م
-                    </p>
-                  </div>
-
-                  {/* Delete button */}
-                  <button
-                    onClick={() => handleDelete(item.id)}
-                    className="absolute top-2 left-2 w-8 h-8 bg-red-500/90 backdrop-blur-sm rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                  >
-                    <Trash2 className="w-4 h-4 text-white" />
-                  </button>
-                </motion.div>
-              );
-            })}
-          </div>
-        )}
+        </div>
       </div>
     </div>
   );

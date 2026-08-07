@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { Cairo } from "next/font/google";
 import "./globals.css";
 
-const cairo = Cairo({ 
+const cairo = Cairo({
   subsets: ["arabic", "latin"],
   variable: "--font-cairo",
 });
@@ -10,12 +10,20 @@ const cairo = Cairo({
 export const metadata: Metadata = {
   title: "المحبوبي — نظام إدارة الورشة",
   description: "نظام إدارة محل الأثاث والتنجيد المحبوبي",
+  manifest: "/manifest.json", // أضف هذا السطر
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
     <html lang="ar" dir="rtl" className={cairo.variable}>
-      <body className="antialiased" style={{ fontFamily: "var(--font-cairo), Cairo, sans-serif" }}>
+      <body
+        className="antialiased"
+        style={{ fontFamily: "var(--font-cairo), Cairo, sans-serif" }}
+      >
         {children}
       </body>
     </html>

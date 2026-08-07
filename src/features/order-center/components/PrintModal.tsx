@@ -3,9 +3,10 @@
 import React, { useRef, useState, useEffect } from "react";
 import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
-import { X, Printer, Download, MessageCircle, Loader2, Check, Calendar, FileText } from "lucide-react";
+import { X, Printer, Download, MessageCircle, Loader2, Check, FileText } from "lucide-react";
 import type { OrderItem, DocumentType, PrintOptions, DocumentLanguage } from "../../../features/order-center/types";
 import { docTitle, t } from "../../../features/order-center/i18n/documents";
+import { supabase } from "@/lib/supabaseClient";
 
 interface PrintModalProps {
   orderItems: OrderItem[];
@@ -20,35 +21,40 @@ interface PrintModalProps {
   documentType: DocumentType;
   printOptions: PrintOptions;
   onClose: () => void;
-  // ← NEW: agreed delivery date
   agreedDeliveryDate?: string;
   onAgreedDeliveryDateChange?: (date: string) => void;
-  // ← NEW: seller notes
   sellerNotes?: string;
   onSellerNotesChange?: (notes: string) => void;
 }
 
 const C = { green: "#1B5E38", gold: "#C9A84C", dark: "#0D1F17", cream: "#F5F0E8", text: "#374151" };
 
-// ─── Fallback Conditions ───
+// ✅ UPDATED: New fallback conditions from user
 const FALLBACK_CONDITIONS: Record<string, string[]> = {
   devis: [
     "1. عرض السعر صالح لمدة 15 يوماً.",
-    "2. لا يبدأ التصنيع إلا بعد دفع العربون.",
-    "3. التسليم خلال 5-7 أسابيع من تأكيد الطلب.",
+    "2. الأسعار قابلة للتغيير بعد انتهاء مدة صلاحية العرض.",
+    "3. عرض السعر لا يعتبر فاتورة ولا أمر شراء.",
+    "4. لا يبدأ التصنيع إلا بعد تأكيد الطلب ودفع العربون.",
+    "5. الأسعار تشمل فقط المنتجات والخدمات المذكورة في عرض السعر.",
+    "6. أي تعديل في المقاسات أو الخيارات قد يؤدي إلى تغيير السعر.",
+    "7. لا يتم حجز المواد أو موعد الإنتاج بمجرد إصدار عرض السعر.",
   ],
   bon_de_commande: [
     "1. دفع العربون إلزامي لبدء التصنيع.",
-    "2. العربون غير قابل للاسترجاع بعد بدء العمل.",
-    "3. موعد التسليم المتفق عليه: {{deliveryDate}}.",
+    "2. العربون غير قابل للاسترجاع بعد بدء التصنيع.",
+    "3. يبدأ العمل فقط بعد استلام العربون.",
+    "4. لا يمكن تعديل المقاسات أو نوع الثوب أو نوع البونج أو نوع الخشب أو التشطيبات بعد بدء التصنيع.",
+    "5. مدة التصنيع القصوى 90 يوماً.",
+    "6. تاريخ التسليم هو تاريخ تقديري وقد يتغير في الحالات الاستثنائية.",
+    "7. يجب دفع المبلغ المتبقي بالكامل قبل الاستلام أو التسليم.",
+    "8. يجب على العميل فحص المنتج عند الاستلام.",
+    "9. في حالة القوة القاهرة قد يتم تمديد مدة الإنجاز مع إشعار العميل.",
   ],
   facture: [
     "1. الفاتورة تُثبت عملية البيع النهائية.",
-    "2. الضمان 6 أشهر على الخياطة.",
-  ],
-  work_order: [
-    "1. أمر شغل داخلي — للورشة فقط.",
-    "2. يُراجع المدير التقني جميع المواصفات قبل الإنتاج.",
+    "2. يجب دفع المبلغ المتبقي قبل التسليم إذا لم يكن مدفوعاً.",
+    "3. للاستفسار أو خدمة ما بعد البيع يمكن التواصل عبر معلومات الاتصال الموجودة في الفاتورة.",
   ],
 };
 
@@ -91,28 +97,50 @@ export default function PrintModal({
     } catch (e) {
       console.error("Failed to load background:", e);
     }
+    await loadConditionsFromDB();
+  }
 
-    const key = documentType in FALLBACK_CONDITIONS ? documentType : "devis";
-    setConditions(FALLBACK_CONDITIONS[key]);
-
+  async function loadConditionsFromDB() {
     try {
-      const res = await fetch(`/api/document-conditions?type=${documentType}`);
-      if (res.ok) {
-        const data = await res.json();
-        if (data.conditions?.length > 0) setConditions(data.conditions);
+      const { data, error } = await supabase
+        .from("document_conditions")
+        .select("*")
+        .limit(1)
+        .maybeSingle();
+
+      if (error || !data) {
+        setConditions(FALLBACK_CONDITIONS[documentType] || FALLBACK_CONDITIONS.devis);
+        return;
       }
-    } catch {
-      // keep fallback
+
+      let raw: string | null = null;
+      if (documentType === "devis") raw = data.devis_conditions;
+      else if (documentType === "bon_de_commande") raw = data.bc_conditions;
+      else if (documentType === "facture") raw = data.facture_conditions;
+
+      if (!raw) {
+        setConditions(FALLBACK_CONDITIONS[documentType] || FALLBACK_CONDITIONS.devis);
+        return;
+      }
+
+      if (typeof raw === "string") {
+        setConditions(raw.split("\n").filter(Boolean));
+      } else if (Array.isArray(raw)) {
+        setConditions(raw);
+      } else {
+        setConditions(FALLBACK_CONDITIONS[documentType] || FALLBACK_CONDITIONS.devis);
+      }
+    } catch (e) {
+      console.error("Failed to load conditions from DB:", e);
+      setConditions(FALLBACK_CONDITIONS[documentType] || FALLBACK_CONDITIONS.devis);
     }
   }
 
-  // Build conditions with dynamic delivery date
   const displayConditions = React.useMemo(() => {
-    const base = conditions.length > 0 ? conditions : (FALLBACK_CONDITIONS[documentType] || FALLBACK_CONDITIONS.devis);
     if (documentType === "bon_de_commande" && agreedDeliveryDate) {
-      return base.map((c) => c.replace("{{deliveryDate}}", agreedDeliveryDate));
+      return conditions.map((c) => c.replace("{{deliveryDate}}", agreedDeliveryDate));
     }
-    return base;
+    return conditions;
   }, [conditions, documentType, agreedDeliveryDate]);
 
   async function generatePdfBlob(): Promise<Blob | null> {
@@ -213,7 +241,6 @@ export default function PrintModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" dir="rtl">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden max-h-[90vh] flex flex-col">
-        {/* Header */}
         <div className="flex items-center justify-between p-5 border-b border-gray-100 flex-shrink-0">
           <div>
             <h2 className="text-lg font-bold" style={{ color: C.dark }}>{title}</h2>
@@ -222,7 +249,6 @@ export default function PrintModal({
           <button onClick={onClose} className="p-2 rounded-lg hover:bg-gray-100 transition"><X className="w-5 h-5 text-gray-500" /></button>
         </div>
 
-        {/* Scrollable Content */}
         <div className="p-5 space-y-3 overflow-y-auto flex-1">
           {done && (
             <div className="flex items-center gap-2 p-3 rounded-lg bg-green-50 text-green-700 text-sm font-bold">
@@ -230,7 +256,6 @@ export default function PrintModal({
             </div>
           )}
 
-          {/* ─── Agreed Delivery Date ─── */}
           <div className="bg-amber-50 rounded-xl p-4 border border-amber-200">
             <label className="flex items-center gap-2 text-sm font-bold text-amber-800 mb-2">
               <span>📅</span> موعد التسليم المتفق عليه
@@ -242,10 +267,9 @@ export default function PrintModal({
               placeholder="مثال: 20/08/2026 أو 5-7 أسابيع"
               className="w-full p-3 rounded-lg border-2 border-amber-200 text-right font-bold text-amber-900 bg-white focus:border-amber-500 focus:outline-none transition-colors text-sm"
             />
-            <p className="text-xs text-amber-600 mt-1">سيظهر في بون دي كوموند ويُرسل للزبون</p>
+            <p className="text-xs text-amber-600 mt-1">سيظهر في بون دي كوماند ويُرسل للزبون</p>
           </div>
 
-          {/* ─── Seller Notes ─── */}
           <div className="bg-blue-50 rounded-xl p-4 border border-blue-200">
             <label className="flex items-center gap-2 text-sm font-bold text-blue-800 mb-2">
               <span>📝</span> ملاحظات خاصة (تظهر في المستند)
@@ -260,7 +284,13 @@ export default function PrintModal({
             <p className="text-xs text-blue-600 mt-1">تظهر في أسفل بيانات الزبون في PDF</p>
           </div>
 
-          {/* Buttons */}
+          <div className="bg-gray-50 rounded-xl p-3 border border-gray-200">
+            <div className="flex items-center gap-2 text-sm text-gray-600">
+              <FileText className="w-4 h-4" />
+              <span>الشروط المحملة: {displayConditions.length} بند</span>
+            </div>
+          </div>
+
           <div className="space-y-3 pt-2">
             <button onClick={handlePrint} disabled={loading}
               className="w-full flex items-center justify-center gap-3 p-4 rounded-xl font-bold text-white transition hover:opacity-90 disabled:opacity-50"
@@ -284,13 +314,11 @@ export default function PrintModal({
           </div>
         </div>
 
-        {/* Footer */}
         <div className="px-5 pb-4 text-center flex-shrink-0">
           <p className="text-xs text-gray-400">{orderItems.length} منتجات | المجموع: {actualTotal} {t(lang, "currency_symbol")}</p>
         </div>
       </div>
 
-      {/* Hidden printable div */}
       {bgBase64 && (
         <div style={{ position: "absolute", left: "-9999px", top: 0 }}>
           <div ref={printRef} dir="rtl"
@@ -301,7 +329,6 @@ export default function PrintModal({
               padding: "85px 38px 52px 38px", boxSizing: "border-box",
             }}>
 
-            {/* Title */}
             <div style={{ textAlign: "right", marginBottom: "8px" }}>
               <h1 style={{ fontSize: "20px", fontWeight: 700, color: C.green, margin: 0 }}>{title}</h1>
               <p style={{ fontSize: "9px", color: "#6B7280", margin: "2px 0 0 0" }}>
@@ -309,7 +336,6 @@ export default function PrintModal({
               </p>
             </div>
 
-            {/* Customer */}
             <div style={{ marginBottom: "6px", padding: "6px", background: "rgba(245,240,232,0.6)", borderRadius: "3px", borderRight: `2px solid ${C.gold}` }}>
               <h3 style={{ fontSize: "11px", fontWeight: 700, color: C.green, margin: "0 0 4px 0" }}>{t(lang, "client")}</h3>
               <Row label={t(lang, "client")} value={customerName} />
@@ -324,7 +350,6 @@ export default function PrintModal({
               )}
             </div>
 
-            {/* Products */}
             <div>
               <h3 style={{ fontSize: "11px", fontWeight: 700, color: C.green, margin: "0 0 4px 0" }}>{t(lang, "products")} ({orderItems.length})</h3>
               {orderItems.map((item, idx) => (
@@ -339,12 +364,10 @@ export default function PrintModal({
                       <span style={{ fontWeight: 700, fontSize: "11px", color: C.gold }}>{item.totalPrice} {t(lang, "currency_symbol")}</span>
                     )}
                   </div>
-                  {printOptions.includeProductionDetails && <ProductDetails item={item} lang={lang} printOptions={printOptions} />}
                 </div>
               ))}
             </div>
 
-            {/* Totals */}
             {printOptions.includePrices && (
               <div style={{ marginTop: "5px", padding: "6px", background: "rgba(245,240,232,0.7)", borderRadius: "3px", border: `1px solid ${C.gold}45` }}>
                 <h3 style={{ fontSize: "11px", fontWeight: 700, color: C.green, margin: "0 0 4px 0" }}>{t(lang, "total")}</h3>
@@ -364,7 +387,6 @@ export default function PrintModal({
               </div>
             )}
 
-            {/* Conditions */}
             {displayConditions.length > 0 && (
               <div style={{ marginTop: "5px", padding: "5px", background: "rgba(249,250,251,0.6)", borderRadius: "3px" }}>
                 <h3 style={{ fontSize: "10px", fontWeight: 700, color: C.green, margin: "0 0 3px 0" }}>{t(lang, "conditions_title")}</h3>
@@ -374,7 +396,6 @@ export default function PrintModal({
               </div>
             )}
 
-            {/* Signatures */}
             {printOptions.includeSignatures && (
               <div style={{ display: "flex", justifyContent: "space-between", marginTop: "10px", paddingTop: "4px" }}>
                 <SigBox label={t(lang, "signature_customer")} name={customerName} />
@@ -382,7 +403,6 @@ export default function PrintModal({
               </div>
             )}
 
-            {/* QR */}
             {printOptions.includeQrCode && (
               <img src={`https://api.qrserver.com/v1/create-qr-code/?size=120x120&margin=0&data=${encodeURIComponent(`${title} #${orderNumber}`)}`}
                 alt="" style={{ position: "absolute", bottom: "60px", left: "38px", width: "40px", height: "40px" }} />
@@ -394,7 +414,6 @@ export default function PrintModal({
   );
 }
 
-/* ─── Helpers ─── */
 function Row({ label, value, valueColor }: { label: string; value: string; valueColor?: string }) {
   return (
     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "1px" }}>
@@ -412,192 +431,4 @@ function SigBox({ label, name }: { label: string; name: string }) {
       <p style={{ fontSize: "8px", color: "#6B7280", margin: 0 }}>{name}</p>
     </div>
   );
-}
-
-/* ═══════════════════════════════════════════════════════════════
-   PRODUCT DETAILS — matches actual builder structures
-   ═══════════════════════════════════════════════════════════════ */
-function ProductDetails({ item, lang, printOptions }: { item: OrderItem; lang: DocumentLanguage; printOptions: PrintOptions }) {
-  const d = item.details || {};
-  const calc = item.calculations || {};
-  const rows: React.ReactNode[] = [];
-
-  const D = ({ label, value }: { label: string; value: string | number }) => (
-    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "1px", fontSize: "9px" }}>
-      <span style={{ color: "#6B7280", width: "80px" }}>{label}:</span>
-      <span style={{ fontWeight: 700, flex: 1, textAlign: "right" }}>{value}</span>
-    </div>
-  );
-
-  const BlockTitle = ({ children }: { children: React.ReactNode }) => (
-    <p style={{ fontSize: "9px", fontWeight: 700, color: C.green, margin: "2px 0 1px 0" }}>{children}</p>
-  );
-
-  const BlockItem = ({ children }: { children: React.ReactNode }) => (
-    <p style={{ fontSize: "8px", color: C.dark, margin: 0 }}>{children}</p>
-  );
-
-  // ═══ SALON ═══
-  if (item.productType === "salon") {
-    if (d.fabric?.name) rows.push(<D key="f" label={t(lang, "fabric")} value={d.fabric.name} />);
-    if (d.fabric?.pricePerMeter) rows.push(<D key="fp" label="سعر المتر" value={`${d.fabric.pricePerMeter} ${t(lang, "currency_symbol")}`} />);
-
-    if (d.seddari?.length > 0) {
-      rows.push(
-        <div key="sed" style={{ marginTop: "2px" }}>
-          <BlockTitle>{t(lang, "seddars")}:</BlockTitle>
-          {d.seddari.map((s: any, i: number) => (
-            <BlockItem key={i}>
-              #{i + 1} — {s.lengthCm || s.length || 0}×{s.widthCm || 70}×{s.heightCm || 30} cm
-              {printOptions.includePrices && s.price ? ` = ${s.price} ${t(lang, "currency_symbol")}` : ""}
-            </BlockItem>
-          ))}
-        </div>
-      );
-    }
-
-    if (d.stitch?.name) {
-      rows.push(<D key="st" label={t(lang, "stitch")} value={`${d.stitch.name}${d.stitch.price ? ` = ${d.stitch.price} ${t(lang, "currency_symbol")}` : ""}`} />);
-    }
-
-    if (d.cushions?.enabled) {
-      rows.push(
-        <div key="cush" style={{ marginTop: "2px" }}>
-          <BlockTitle>{t(lang, "cushions")}: ✅</BlockTitle>
-          <BlockItem>{t(lang, "quantity")}: {d.cushions.count || 0} {printOptions.includePrices && d.cushions.totalPrice ? ` = ${d.cushions.totalPrice} ${t(lang, "currency_symbol")}` : ""}</BlockItem>
-        </div>
-      );
-    }
-
-    if (d.decor?.enabled) {
-      rows.push(<D key="dec" label={t(lang, "decor_cushions")} value={`${d.decor.type || ""}${d.decor.price ? ` = ${d.decor.price} ${t(lang, "currency_symbol")}` : ""}`} />);
-    }
-
-    if (d.extras?.length > 0) {
-      const enabled = d.extras.filter((ex: any) => ex.enabled !== false);
-      if (enabled.length > 0) {
-        rows.push(
-          <div key="ext" style={{ marginTop: "2px" }}>
-            <BlockTitle>{t(lang, "extras")}:</BlockTitle>
-            {enabled.map((ex: any, i: number) => (
-              <BlockItem key={i}>{ex.name} {ex.qty ? `×${ex.qty}` : ""} {ex.price ? `= ${ex.price} ${t(lang, "currency_symbol")}` : ""}</BlockItem>
-            ))}
-          </div>
-        );
-      }
-    }
-
-    if (d.formage?.enabled) {
-      rows.push(<D key="form" label="التشكيل" value={`${d.formage.corners || 0} زاوية${d.formage.price ? ` = ${d.formage.price} ${t(lang, "currency_symbol")}` : ""}`} />);
-    }
-
-    if (d.notes) rows.push(<D key="note" label="ملاحظات" value={d.notes} />);
-  }
-
-  // ═══ FOAM ═══
-  if (item.productType === "foam") {
-    if (d.product?.name) rows.push(<D key="p" label={t(lang, "fabric")} value={d.product.name} />);
-    if (d.heightCm) rows.push(<D key="h" label={t(lang, "height")} value={`${d.heightCm} cm`} />);
-    if (d.widthCm) rows.push(<D key="w" label={t(lang, "width")} value={`${d.widthCm} cm`} />);
-
-    if (d.foamSeddars?.length > 0) {
-      rows.push(
-        <div key="fs" style={{ marginTop: "2px" }}>
-          <BlockTitle>{t(lang, "seddars")}:</BlockTitle>
-          {d.foamSeddars.map((len: number, i: number) => (
-            <BlockItem key={i}>#{i + 1} — {t(lang, "length")}: {len}m</BlockItem>
-          ))}
-        </div>
-      );
-    }
-
-    if (d.squareCorners > 0) rows.push(<D key="sq" label={t(lang, "square")} value={`× ${d.squareCorners}`} />);
-    if (d.triangleCorners > 0) rows.push(<D key="tr" label={t(lang, "triangle")} value={`× ${d.triangleCorners}`} />);
-
-    if (d.notes) rows.push(<D key="note" label="ملاحظات" value={d.notes} />);
-  }
-
-  // ═══ WOOD ═══
-  if (item.productType === "wood") {
-    if (d.model?.name) rows.push(<D key="m" label={t(lang, "fabric")} value={`${d.model.name} (${d.model.code || ""})`} />);
-    if (d.model?.woodType) rows.push(<D key="wt" label="نوع الخشب" value={d.model.woodType} />);
-    if (d.salonShape) rows.push(<D key="sh" label={t(lang, "shape")} value={d.salonShape} />);
-
-    if (d.seddars?.length > 0) {
-      rows.push(
-        <div key="ws" style={{ marginTop: "2px" }}>
-          <BlockTitle>{t(lang, "seddars")}:</BlockTitle>
-          {d.seddars.map((s: any, i: number) => (
-            <BlockItem key={i}>#{s.index || i + 1} — {s.lengthCm || s.length || 0} cm {printOptions.includePrices && s.price ? ` = ${s.price} ${t(lang, "currency_symbol")}` : ""}</BlockItem>
-          ))}
-        </div>
-      );
-    }
-
-    if (d.woodItems?.length > 0) {
-      rows.push(
-        <div key="wi" style={{ marginTop: "2px" }}>
-          <BlockTitle>{t(lang, "extras")}:</BlockTitle>
-          {d.woodItems.map((it: any, i: number) => (
-            <BlockItem key={i}>{it.name || it.type} × {it.quantity || 1} = {it.totalPrice || it.total_price || 0} {t(lang, "currency_symbol")}</BlockItem>
-          ))}
-        </div>
-      );
-    }
-
-    if (d.notes) rows.push(<D key="note" label="ملاحظات" value={d.notes} />);
-  }
-
-  // ═══ KHAMIYA ═══
-  if (item.productType === "khamiya") {
-    if (d.selectedKhamiya?.name) rows.push(<D key="k" label={t(lang, "fabric")} value={d.selectedKhamiya.name} />);
-    if (calc.width && calc.height) rows.push(<D key="dim" label={t(lang, "width")} value={`${calc.width}m × ${calc.height}m`} />);
-    if (calc.fabricMeters) rows.push(<D key="fm" label="القماش" value={`${calc.fabricMeters} متر`} />);
-    if (d.shape) rows.push(<D key="sh" label={t(lang, "shape")} value={d.shape === "solid_piece" ? "قطعة واحدة" : "قطعتين"} />);
-
-    if (d.selectedSewing?.name) {
-      rows.push(<D key="sw" label={t(lang, "stitch")} value={`${d.selectedSewing.name}${calc.sewingTotalPrice ? ` = ${calc.sewingTotalPrice} ${t(lang, "currency_symbol")}` : ""}`} />);
-    }
-
-    if (d.selectedAqiq?.name) {
-      rows.push(<D key="aq" label="العقيق" value={`${d.selectedAqiq.name}${calc.aqiqCost ? ` = ${calc.aqiqCost} ${t(lang, "currency_symbol")}` : ""}`} />);
-    }
-
-    if (d.hasBackground && d.selectedBackground?.name) {
-      rows.push(<D key="bg" label="الخلفية" value={`${d.selectedBackground.name}${calc.bgCost ? ` = ${calc.bgCost} ${t(lang, "currency_symbol")}` : ""}`} />);
-    }
-
-    if (d.customAdditions?.length > 0) {
-      rows.push(
-        <div key="ca" style={{ marginTop: "2px" }}>
-          <BlockTitle>إضافات خاصة:</BlockTitle>
-          {d.customAdditions.map((a: any, i: number) => (
-            <BlockItem key={i}>{a.name} = {a.price} {t(lang, "currency_symbol")}</BlockItem>
-          ))}
-        </div>
-      );
-    }
-
-    if (calc.managerOverride) rows.push(<D key="mo" label="السعر النهائي" value={`${calc.managerOverride} ${t(lang, "currency_symbol")}`} />);
-  }
-
-  // ═══ TAPIS ═══
-  if (item.productType === "tapis") {
-    if (d.material?.name) rows.push(<D key="mat" label={t(lang, "fabric")} value={d.material.name} />);
-    if (d.dimensions?.lengthCm && d.dimensions?.widthCm) {
-      rows.push(<D key="dim" label={t(lang, "length")} value={`${d.dimensions.lengthCm}cm × ${d.dimensions.widthCm}cm`} />);
-    }
-    if (d.dimensions?.areaSqm) rows.push(<D key="area" label={t(lang, "area")} value={`${d.dimensions.areaSqm} m²`} />);
-    if (d.cutMarginCm) rows.push(<D key="cm" label="هامش القص" value={`${d.cutMarginCm} cm`} />);
-    if (d.wastePercent) rows.push(<D key="wp" label="الهدر" value={`${d.wastePercent}%`} />);
-    if (d.rounding) rows.push(<D key="rnd" label="التقريب" value={d.rounding === "none" ? "بدون" : d.rounding === "half" ? "نصف" : "كامل"} />);
-  }
-
-  // ═══ ACCESSOIRE ═══
-  if (item.productType === "accessoire") {
-    if (d.name) rows.push(<D key="n" label="الاسم" value={d.name} />);
-    if (d.quantity) rows.push(<D key="q" label={t(lang, "quantity")} value={d.quantity} />);
-  }
-
-  return <div>{rows}</div>;
 }

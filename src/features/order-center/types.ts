@@ -3,7 +3,7 @@
    ═══════════════════════════════════════════════════════════════ */
 
 // ─── Product Types ───
-export type ProductType = 'salon' | 'khamiya' | 'wood' | 'foam' | 'tapis' | 'accessoire';
+export type ProductType = 'salon' | 'khamiya' | 'wood' | 'foam' | 'tapis' | 'accessoire' | 'romani' | 'other';
 
 // ─── Document Types ───
 export type DocumentType = 'devis' | 'bon_de_commande' | 'facture';
@@ -96,22 +96,36 @@ export interface PrintOptions {
   includeSignatures: boolean;
   includeQrCode: boolean;
   includeStamp: boolean;
+  includeBusinessInfo: boolean; // ✅ NEW: Show company header/footer
 }
 
 // ─── Business Profile ───
 export interface BusinessProfile {
-  name: string;
-  nameAr?: string;
-  nameFr?: string;
-  address: string;
-  city: string;
-  phone: string;
+  id?: string;
+  company_name: string;
+  commercial_name?: string;
+  address?: string;
+  city?: string;
+  phone?: string;
+  mobile?: string;
   email?: string;
+  website?: string;
+  facebook?: string;
+  instagram?: string;
+  whatsapp?: string;
   ice?: string;
-  if?: string;
+  if_?: string;
   rc?: string;
-  logoUrl?: string;
-  stampUrl?: string;
+  patente?: string;
+  logo_url?: string;
+  stamp_url?: string;
+  signature_url?: string;
+  bank_name?: string;
+  rib?: string;
+  iban?: string;
+  swift?: string;
+  primary_color?: string;
+  secondary_color?: string;
 }
 
 // ─── Document Conditions ───

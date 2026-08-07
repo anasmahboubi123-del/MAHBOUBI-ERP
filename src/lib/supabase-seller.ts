@@ -6,11 +6,38 @@ import { Product, Category, Notification, AlbumItem } from '@/types/seller.types
 
 // ─── الصور من Supabase Storage ───
 
-export function getPublicImageUrl(bucket: string, path: string | null): string {
-  if (!path) return '';
-  if (path.startsWith('http')) return path;
-  const { data } = supabase.storage.from(bucket).getPublicUrl(path);
-  return data?.publicUrl || '';
+/**
+ * تُرجع الرابط العام الكامل لملف في Supabase Storage.
+ * إذا كان المسار نسبياً (مثال: "romani/simple.jpg")، تُضيف دومين Supabase تلقائياً.
+ * إذا كان المسار فارغاً أو null، تُرجع null.
+ */
+export function getPublicImageUrl(bucket: string, path: string | null | undefined): string | null {
+  if (!path || path.trim() === '') return null;
+
+  // إذا كان الرابط بالفعل مطلقاً، أرجعه كما هو
+  if (path.startsWith('http://') || path.startsWith('https://')) {
+    return path;
+  }
+
+  // تنظيف المسار: إزالة / في البداية إن وجدت
+  const cleanPath = path.startsWith('/') ? path.slice(1) : path;
+
+  const { data } = supabase.storage.from(bucket).getPublicUrl(cleanPath);
+
+  // التحقق من أن الرابط الناتج يحتوي على بروتوكول
+  const url = data?.publicUrl;
+  if (!url) return null;
+
+  // إذا كان الرابط الناتج لا يحتوي على بروتوكول، أضفه
+  if (!url.startsWith('http')) {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    if (supabaseUrl) {
+      return `${supabaseUrl}/storage/v1/object/public/${bucket}/${cleanPath}`;
+    }
+    return null;
+  }
+
+  return url;
 }
 
 export async function uploadImageToStorage(
@@ -140,42 +167,6 @@ export async function fetchCategories(): Promise<Category[]> {
 
 // ─── ألبوم البائع ───
 
-export async function fetchAlbumItems(): Promise<AlbumItem[]> {
-  try {
-    const { data, error } = await supabase
-      .from('seller_album')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(20);
-
-    if (error) {
-      console.warn('Error fetching album:', error.message);
-      return [];
-    }
-    return (data || []) as AlbumItem[];
-  } catch {
-    return [];
-  }
-}
-
-export async function addAlbumItem(item: Omit<AlbumItem, 'id' | 'created_at'>): Promise<AlbumItem | null> {
-  try {
-    const { data, error } = await supabase
-      .from('seller_album')
-      .insert([{ ...item, created_at: new Date().toISOString() }])
-      .select()
-      .single();
-
-    if (error) {
-      console.error('Error adding album item:', error);
-      return null;
-    }
-    return data as AlbumItem;
-  } catch {
-    return null;
-  }
-}
-
 export async function deleteAlbumItem(id: string): Promise<boolean> {
   try {
     const { error } = await supabase.from('seller_album').delete().eq('id', id);
@@ -273,4 +264,84 @@ export async function createOrderItems(orderId: string, items: any[]) {
     return false;
   }
   return true;
+}
+
+// ─── أقسام الألبوم (إضافة جديدة) ───
+export const ALBUM_CATEGORIES = [
+  { id: "khamiya", name: "الخاميات", icon: "🏠" },
+  { id: "salon", name: "الصالون المغربي", icon: "🛋️" },
+  { id: "tapis", name: "الزرابي", icon: "🧶" },
+  { id: "bois", name: "العود", icon: "🪵" },
+  { id: "bonj", name: "البونج", icon: "🧽" },
+  { id: "romani", name: "الصالون الرومي", icon: "🏛️" },
+] as const;
+
+export type AlbumCategory = (typeof ALBUM_CATEGORIES)[number]["id"];
+
+// ─── رفع صورة الألبوم (إضافة جديدة) ───
+export async function uploadAlbumImage(
+  file: File,
+  category: AlbumCategory
+): Promise<string | null> {
+  const ext = file.name.split('.').pop();
+  const fileName = `${category}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+  const uploadedName = await uploadImageToStorage('album-images', file, fileName);
+  if (!uploadedName) return null;
+  return getPublicImageUrl('album-images', uploadedName);
+}
+
+// ─── حذف صورة من Storage (إضافة جديدة) ───
+export async function deleteAlbumImage(imageUrl: string): Promise<boolean> {
+  try {
+    const path = imageUrl.split('/album-images/')[1];
+    if (!path) return false;
+    const { error } = await supabase.storage.from('album-images').remove([path]);
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+// ─── جلب ألبوم البائع (محدّث — إضافة category اختياري) ───
+export async function fetchAlbumItems(category?: AlbumCategory): Promise<AlbumItem[]> {
+  try {
+    let query = supabase
+      .from('seller_album')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(100);
+
+    if (category) {
+      query = query.eq('category', category);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      console.warn('Error fetching album:', error.message);
+      return [];
+    }
+    return (data || []) as AlbumItem[];
+  } catch {
+    return [];
+  }
+}
+
+// ─── إضافة عنصر للألبوم (محدّث — يدعم category) ───
+export async function addAlbumItem(item: Omit<AlbumItem, 'id' | 'created_at'>): Promise<AlbumItem | null> {
+  try {
+    const { data, error } = await supabase
+      .from('seller_album')
+      .insert([{ ...item, created_at: new Date().toISOString() }])
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error adding album item:', error);
+      return null;
+    }
+    return data as AlbumItem;
+  } catch {
+    return null;
+  }
 }

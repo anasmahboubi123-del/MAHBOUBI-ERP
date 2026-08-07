@@ -82,6 +82,11 @@ export default function FoamSellerPage() {
   const [error, setError] = useState('');
   const [managerPinCode, setManagerPinCode] = useState('9999');
 
+  // ─── Price-per-height + editable price states ─────────────────
+  const [customPricePerMeter, setCustomPricePerMeter] = useState<number | null>(null);
+  const [showInlinePriceEdit, setShowInlinePriceEdit] = useState(false);
+  const [tempPriceInput, setTempPriceInput] = useState('');
+
   useEffect(() => {
     loadData();
   }, []);
@@ -99,10 +104,45 @@ export default function FoamSellerPage() {
     }
   };
 
+  // ─── Price helpers ─────────────────────────────────────────
+  const handleSelectProduct = (product: FoamProduct) => {
+    setSelectedProduct(product);
+    setSelectedHeight(null);
+    setCustomPricePerMeter(null);
+    setShowInlinePriceEdit(false);
+    setTempPriceInput('');
+  };
+
+  const handleSelectHeight = (heightCm: number, defaultPrice: number) => {
+    setSelectedHeight(heightCm);
+    setCustomPricePerMeter(defaultPrice);
+    setShowInlinePriceEdit(false);
+    setTempPriceInput('');
+  };
+
+  const effectivePricePerMeter =
+    customPricePerMeter ?? selectedProduct?.price_per_meter ?? 0;
+
+  const applyCustomPrice = () => {
+    const val = parseFloat(tempPriceInput);
+    if (!isNaN(val) && val > 0) {
+      setCustomPricePerMeter(val);
+      setShowInlinePriceEdit(false);
+    }
+  };
+
+  const resetCustomPrice = () => {
+    if (selectedProduct && selectedHeight !== null) {
+      const h = selectedProduct.heights?.find(h => h.height_cm === selectedHeight);
+      setCustomPricePerMeter(h?.price_per_meter ?? selectedProduct.price_per_meter);
+    }
+    setShowInlinePriceEdit(false);
+  };
+
   const priceCalc = selectedProduct
     ? calculateFoamPrice(
         seddars,
-        selectedProduct.price_per_meter,
+        effectivePricePerMeter,
         hasCorners === true,
         squareCorners,
         triangleCorners,
@@ -215,6 +255,7 @@ export default function FoamSellerPage() {
       squareCorners,
       triangleCorners,
       priceAdjustment: priceAdjustment || undefined,
+      customPricePerMeter: customPricePerMeter ?? undefined,
       notes: '',
     });
 
@@ -234,6 +275,9 @@ export default function FoamSellerPage() {
     setSquareCorners(0);
     setTriangleCorners(0);
     setPriceAdjustment(null);
+    setCustomPricePerMeter(null);
+    setShowInlinePriceEdit(false);
+    setTempPriceInput('');
     setError('');
   };
 
@@ -330,7 +374,7 @@ export default function FoamSellerPage() {
                 {products.map(product => (
                   <button
                     key={product.id}
-                    onClick={() => setSelectedProduct(product)}
+                    onClick={() => handleSelectProduct(product)}
                     className={`relative group rounded-2xl overflow-hidden border-2 transition-all duration-300 text-right ${
                       selectedProduct?.id === product.id
                         ? 'border-[#C9A84C] ring-4 ring-[#C9A84C]/20 shadow-lg shadow-[#C9A84C]/10'
@@ -390,21 +434,77 @@ export default function FoamSellerPage() {
                   المنتج:{' '}
                   <span className="font-bold text-[#C9A84C]">{selectedProduct.name}</span>
                 </p>
-                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3">
-                  {selectedProduct.heights?.map(h => (
-                    <button
-                      key={h.id}
-                      onClick={() => setSelectedHeight(h.height_cm)}
-                      className={`py-4 px-6 rounded-xl text-xl font-bold transition-all ${
-                        selectedHeight === h.height_cm
-                          ? 'bg-[#C9A84C] text-[#0D1F17] shadow-lg shadow-[#C9A84C]/20'
-                          : 'bg-[#0D1F17] text-[#F5F0E8] hover:bg-[#0D1F17]/80 border border-[#1B5E3B]'
-                      }`}
-                    >
-                      {h.height_cm} سم
-                    </button>
-                  ))}
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                  {selectedProduct.heights?.map(h => {
+                    const heightPrice = h.price_per_meter ?? selectedProduct.price_per_meter;
+                    return (
+                      <button
+                        key={h.id}
+                        onClick={() => handleSelectHeight(h.height_cm, heightPrice)}
+                        className={`py-4 px-4 rounded-xl font-bold transition-all flex flex-col items-center gap-1 ${
+                          selectedHeight === h.height_cm
+                            ? 'bg-[#C9A84C] text-[#0D1F17] shadow-lg shadow-[#C9A84C]/20 border-2 border-[#C9A84C]'
+                            : 'bg-[#0D1F17] text-[#F5F0E8] hover:bg-[#0D1F17]/80 border-2 border-[#1B5E3B]'
+                        }`}
+                      >
+                        <span className="text-xl">{h.height_cm} سم</span>
+                        <span className={`text-sm ${selectedHeight === h.height_cm ? 'text-[#0D1F17]/70' : 'text-[#C9A84C]'}`}>
+                          {heightPrice} درهم/م
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
+
+                {/* Editable price for selected height */}
+                {selectedHeight !== null && (
+                  <div className="mt-6 bg-[#0D1F17] rounded-xl p-4 border border-[#C9A84C]/30 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[#F5F0E8]/80">
+                        السعر لكل متر (ارتفاع {selectedHeight} سم)
+                      </span>
+                      <span className="text-[#C9A84C] font-bold text-xl">
+                        {effectivePricePerMeter} درهم
+                      </span>
+                    </div>
+
+                    {!showInlinePriceEdit ? (
+                      <button
+                        onClick={() => {
+                          setTempPriceInput(effectivePricePerMeter.toString());
+                          setShowInlinePriceEdit(true);
+                        }}
+                        className="text-sm text-[#C9A84C] underline hover:text-[#C9A84C]/80 transition-colors"
+                      >
+                        تعديل السعر يدوياً
+                      </button>
+                    ) : (
+                      <div className="flex gap-3 items-center">
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={tempPriceInput}
+                          onChange={e => setTempPriceInput(e.target.value)}
+                          onKeyDown={e => e.key === 'Enter' && applyCustomPrice()}
+                          placeholder="السعر الجديد"
+                          className="flex-1 bg-[#1B5E3B]/30 border-2 border-[#C9A84C]/50 rounded-xl px-4 py-2 text-[#F5F0E8] focus:border-[#C9A84C] focus:outline-none"
+                        />
+                        <button
+                          onClick={applyCustomPrice}
+                          className="px-4 py-2 bg-[#C9A84C] text-[#0D1F17] rounded-xl font-bold text-sm hover:bg-[#C9A84C]/90 transition-colors"
+                        >
+                          حفظ
+                        </button>
+                        <button
+                          onClick={resetCustomPrice}
+                          className="px-4 py-2 bg-[#0D1F17] border border-[#F5F0E8]/20 text-[#F5F0E8] rounded-xl text-sm hover:bg-[#0D1F17]/80 transition-colors"
+                        >
+                          إلغاء
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -642,7 +742,10 @@ export default function FoamSellerPage() {
                   <div className="flex justify-between">
                     <span className="text-[#F5F0E8]/80">
                       السدادر ({priceCalc.totalLength.toFixed(2)} م ×{' '}
-                      {selectedProduct.price_per_meter} درهم)
+                      {effectivePricePerMeter} درهم)
+                      {customPricePerMeter !== null && (
+                        <span className="text-xs text-[#C9A84C] mr-2">(سعر معدّل)</span>
+                      )}
                     </span>
                     <span className="font-bold">
                       {formatCurrency(priceCalc.seddarsTotal)}

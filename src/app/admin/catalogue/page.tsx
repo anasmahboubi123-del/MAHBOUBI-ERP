@@ -68,7 +68,6 @@ async function fetchFoamProducts() {
   return (data || []) as any[];
 }
 
-// ✅ جديد: أشكال خياطة السدادر
 async function fetchSeddariStitches() {
   const { data, error } = await supabase
     .from("stitch_styles")
@@ -79,7 +78,6 @@ async function fetchSeddariStitches() {
   return (data || []).map((row) => ({ ...row, image_url: row.image_url || null }));
 }
 
-// ✅ جديد: أشكال خياطة المخاد
 async function fetchCushionStitches() {
   const { data, error } = await supabase
     .from("stitch_styles")
@@ -90,7 +88,6 @@ async function fetchCushionStitches() {
   return (data || []).map((row) => ({ ...row, image_url: row.image_url || null }));
 }
 
-// ✅ جديد: أشكال خياطة الكيدور
 async function fetchDecorStitches() {
   const { data, error } = await supabase
     .from("stitch_styles")
@@ -101,10 +98,29 @@ async function fetchDecorStitches() {
   return (data || []).map((row) => ({ ...row, image_url: row.image_url || null }));
 }
 
-// ✅ جديد: أشكال الكيدور
 async function fetchDecorShapes() {
   const { data, error } = await supabase
     .from("decor_cushion_shapes")
+    .select("*")
+    .order("name");
+  if (error) throw error;
+  return (data || []).map((row) => ({ ...row, image_url: row.image_url || null }));
+}
+
+// ✅ جديد: أشكال الصالون الرومي
+async function fetchRomaniModels() {
+  const { data, error } = await supabase
+    .from("romani_models")
+    .select("*")
+    .order("name");
+  if (error) throw error;
+  return (data || []).map((row) => ({ ...row, image_url: row.image_url || null }));
+}
+
+// ✅ جديد: ألوان الصالون الرومي
+async function fetchRomaniColors() {
+  const { data, error } = await supabase
+    .from("romani_colors")
     .select("*")
     .order("name");
   if (error) throw error;
@@ -218,7 +234,6 @@ const tabs: CatalogueTab[] = [
     ],
     fetcher: fetchFoamProducts,
   },
-  // ✅ جديد: أشكال خياطة السدادر
   {
     key: "seddari_stitches",
     label: "✂️ خياطة السدادر",
@@ -233,7 +248,6 @@ const tabs: CatalogueTab[] = [
     ],
     fetcher: fetchSeddariStitches,
   },
-  // ✅ جديد: أشكال خياطة المخاد
   {
     key: "cushion_stitches",
     label: "🛏️ خياطة المخاد",
@@ -248,7 +262,6 @@ const tabs: CatalogueTab[] = [
     ],
     fetcher: fetchCushionStitches,
   },
-  // ✅ جديد: أشكال خياطة الكيدور
   {
     key: "decor_stitches",
     label: "🌀 خياطة الكيدور",
@@ -263,7 +276,6 @@ const tabs: CatalogueTab[] = [
     ],
     fetcher: fetchDecorStitches,
   },
-  // ✅ جديد: أشكال الكيدور
   {
     key: "decor_shapes",
     label: "🌀 أشكال الكيدور",
@@ -275,6 +287,34 @@ const tabs: CatalogueTab[] = [
       { key: "active", label: "نشط", type: "boolean" },
     ],
     fetcher: fetchDecorShapes,
+  },
+  // ✅ جديد: أشكال الصالون الرومي
+  {
+    key: "romani_models",
+    label: "🛋️ أشكال الرومي",
+    table: "romani_models",
+    bucket: "catalogue",
+    fields: [
+      { key: "image_url", label: "الصورة", type: "image" },
+      { key: "name", label: "اسم الشكل" },
+      { key: "code", label: "الرمز" },
+      { key: "price_per_meter", label: "السعر/متر", type: "number" },
+      { key: "active", label: "نشط", type: "boolean" },
+    ],
+    fetcher: fetchRomaniModels,
+  },
+  // ✅ جديد: ألوان الصالون الرومي
+  {
+    key: "romani_colors",
+    label: "🎨 ألوان الرومي",
+    table: "romani_colors",
+    bucket: "catalogue",
+    fields: [
+      { key: "image_url", label: "الصورة", type: "image" },
+      { key: "name", label: "اسم اللون" },
+      { key: "active", label: "نشط", type: "boolean" },
+    ],
+    fetcher: fetchRomaniColors,
   },
 ];
 
@@ -373,7 +413,7 @@ export default function CataloguePage() {
     }
   };
 
-  /* ✅ Save — Fixed */
+  /* Save */
   const handleSave = async () => {
     setSaving(true);
     try {
@@ -395,7 +435,6 @@ export default function CataloguePage() {
         }
       });
 
-      // ✅ إضافة target تلقائياً للجداول المشتركة
       if (currentTab.table === "stitch_styles" && !editingId) {
         if (currentTab.key === "seddari_stitches") payload.target = "seddari";
         else if (currentTab.key === "cushion_stitches") payload.target = "cushion";

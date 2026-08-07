@@ -1,22 +1,41 @@
+"use client";
+
 import { supabase } from "@/lib/supabaseClient";
-import type { DocumentLanguage } from "../i18n/documents";
+import type { DocumentType, DocumentLanguage } from "../types";
 
 export type DocType = "devis" | "bon_de_commande" | "facture" | "work_order";
 
 const FALLBACK_CONDITIONS: Record<string, string[]> = {
   devis: [
-    "1. عرض السعر صالح لمدة 15 يوماً.",
-    "2. لا يبدأ التصنيع إلا بعد دفع العربون.",
-    "3. التسليم خلال 3-4 أسابيع من تأكيد الطلب.",
+    "1. عرض السعر صالح لمدة 15 يومًا.",
+    "2. الأسعار قابلة للتغيير بعد انتهاء مدة صلاحية العرض.",
+    "3. عرض السعر لا يعتبر فاتورة ولا أمر شراء.",
+    "4. لا يبدأ التصنيع إلا بعد تأكيد الطلب ودفع العربون.",
+    "5. الأسعار تشمل فقط المنتجات والخدمات المذكورة في عرض السعر.",
+    "6. أي تعديل في المقاسات أو الخيارات قد يؤدي إلى تغيير السعر.",
+    "7. لا يتم حجز المواد أو موعد الإنتاج بمجرد إصدار عرض السعر.",
   ],
   bon_de_commande: [
     "1. دفع العربون إلزامي لبدء التصنيع.",
-    "2. العربون غير قابل للاسترجاع بعد بدء العمل.",
-    "3. مدة التصنيع القصوى 90 يوماً.",
+    "2. العربون غير قابل للاسترجاع بعد بدء التصنيع.",
+    "3. يبدأ العمل فقط بعد استلام العربون.",
+    "4. لا يمكن تعديل:",
+    "    * المقاسات.",
+    "    * نوع الثوب.",
+    "    * نوع البونج.",
+    "    * نوع الخشب.",
+    "    * التشطيبات.",
+    "        بعد بدء التصنيع.",
+    "5. مدة التصنيع القصوى 90 يومًا .",
+    "6. تاريخ التسليم هو تاريخ تقديري وقد يتغير في الحالات الاستثنائية.",
+    "7. يجب دفع المبلغ المتبقي بالكامل قبل الاستلام أو التسليم.",
+    "8. يجب على العميل فحص المنتج عند الاستلام.",
+    "9. في حالة القوة القاهرة قد يتم تمديد مدة الإنجاز مع إشعار العميل.",
   ],
   facture: [
-    "1. الفاتورة تُثبت عملية البيع النهائية.",
-    "2. الضمان 6 أشهر على الخياطة.",
+    "1. الفاتورة تثبت عملية البيع النهائية.",
+    "2. يجب دفع المبلغ المتبقي قبل التسليم إذا لم يكن مدفوعًا.",
+    "3. للاستفسار أو خدمة ما بعد البيع يمكن التواصل عبر معلومات الاتصال الموجودة في الفاتورة.",
   ],
   work_order: [
     "1. أمر شغل داخلي — للورشة فقط.",
@@ -67,4 +86,55 @@ export async function getDocumentConditions(
   } catch {
     return FALLBACK_CONDITIONS[key];
   }
+}
+
+/** يجلب كل الشروط دفعة واحدة (لصفحة الإعدادات) */
+export async function getAllDocumentConditions(): Promise<Record<string, string>> {
+  try {
+    const { data, error } = await supabase
+      .from("document_conditions")
+      .select("*")
+      .limit(1)
+      .maybeSingle();
+
+    if (error || !data) {
+      // Return fallback as joined strings
+      return {
+        devis_conditions: FALLBACK_CONDITIONS.devis.join("\n"),
+        bc_conditions: FALLBACK_CONDITIONS.bon_de_commande.join("\n"),
+        facture_conditions: FALLBACK_CONDITIONS.facture.join("\n"),
+      };
+    }
+
+    return {
+      devis_conditions: data.devis_conditions || FALLBACK_CONDITIONS.devis.join("\n"),
+      bc_conditions: data.bc_conditions || FALLBACK_CONDITIONS.bon_de_commande.join("\n"),
+      facture_conditions: data.facture_conditions || FALLBACK_CONDITIONS.facture.join("\n"),
+    };
+  } catch {
+    return {
+      devis_conditions: FALLBACK_CONDITIONS.devis.join("\n"),
+      bc_conditions: FALLBACK_CONDITIONS.bon_de_commande.join("\n"),
+      facture_conditions: FALLBACK_CONDITIONS.facture.join("\n"),
+    };
+  }
+}
+
+/** يحفظ الشروط في Supabase */
+export async function saveDocumentConditions(conditions: {
+  devis_conditions?: string;
+  bc_conditions?: string;
+  facture_conditions?: string;
+}): Promise<void> {
+  const { error } = await supabase
+    .from("document_conditions")
+    .upsert(
+      {
+        ...conditions,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "id" }
+    );
+
+  if (error) throw error;
 }

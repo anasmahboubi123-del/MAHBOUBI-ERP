@@ -23,11 +23,13 @@ export interface FoamDraft {
     value: number;
     reason: string;
   };
+  customPricePerMeter?: number;   // ← NEW: override price from height
   notes?: string;
 }
 
 export function buildFoamCartItem(draft: FoamDraft): ProductResult {
-  const productPrice = draft.selectedProduct.price_per_meter || 0;
+  // Use custom price if provided, otherwise fall back to product default
+  const productPrice = draft.customPricePerMeter ?? draft.selectedProduct.price_per_meter ?? 0;
   const heightM = draft.selectedHeight / 100;
 
   // Calculate seddars cost
@@ -50,7 +52,8 @@ export function buildFoamCartItem(draft: FoamDraft): ProductResult {
     product: {
       id: String(draft.selectedProduct.id),
       name: draft.selectedProduct.name,
-      pricePerMeter: draft.selectedProduct.price_per_meter,
+      pricePerMeter: productPrice,          // ← save actual price used
+      defaultPricePerMeter: draft.selectedProduct.price_per_meter, // ← for reference
     },
     heightCm: draft.selectedHeight,
     widthCm: draft.widthCm,
@@ -80,6 +83,10 @@ export function buildFoamCartItem(draft: FoamDraft): ProductResult {
 
   if (draft.priceAdjustment) {
     calculations.priceAdjustment = draft.priceAdjustment;
+  }
+
+  if (draft.customPricePerMeter !== undefined) {
+    calculations.customPricePerMeter = draft.customPricePerMeter;
   }
 
   return {

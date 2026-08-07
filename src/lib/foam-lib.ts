@@ -107,9 +107,14 @@ export async function getFoamProductById(id: string): Promise<FoamProduct | null
   return data;
 }
 
+export interface HeightInput {
+  height_cm: number;
+  price_per_meter: number;
+}
+
 export async function createFoamProduct(
   product: Omit<FoamProduct, 'id' | 'created_at' | 'updated_at' | 'heights'>,
-  heights: number[]
+  heights: HeightInput[]
 ): Promise<FoamProduct> {
   const { data, error } = await supabase
     .from('foam_products')
@@ -121,7 +126,8 @@ export async function createFoamProduct(
   if (heights.length > 0) {
     const heightRows = heights.map(h => ({
       product_id: data.id,
-      height_cm: h,
+      height_cm: h.height_cm,
+      price_per_meter: h.price_per_meter,
       is_active: true
     }));
     await supabase.from('foam_product_heights').insert(heightRows);
@@ -134,7 +140,7 @@ export async function createFoamProduct(
 export async function updateFoamProduct(
   id: string,
   updates: Partial<FoamProduct>,
-  heights?: number[]
+  heights?: HeightInput[]
 ): Promise<FoamProduct> {
   const { data, error } = await supabase
     .from('foam_products')
@@ -149,7 +155,8 @@ export async function updateFoamProduct(
     if (heights.length > 0) {
       const heightRows = heights.map(h => ({
         product_id: id,
-        height_cm: h,
+        height_cm: h.height_cm,
+        price_per_meter: h.price_per_meter,
         is_active: true
       }));
       await supabase.from('foam_product_heights').insert(heightRows);
@@ -232,6 +239,7 @@ export interface CreateFoamOrderInput {
   deliveryDate: string;
   notes: string;
   deposit: number;
+  pricePerMeter?: number;           // ← NEW: override price from height
   priceAdjustment?: {
     type: 'discount' | 'increase';
     value: number;
@@ -244,8 +252,11 @@ export interface CreateFoamOrderInput {
 export async function createFoamOrder(
   input: CreateFoamOrderInput
 ): Promise<FoamOrder> {
+  // Use the provided pricePerMeter (height-specific or custom) or fall back to product default
+  const effectivePricePerMeter = input.pricePerMeter ?? input.product.price_per_meter;
+
   const totalLength = input.seddars.reduce((sum, len) => sum + len, 0);
-  const seddarsTotal = totalLength * input.product.price_per_meter;
+  const seddarsTotal = totalLength * effectivePricePerMeter;
   const squareCornersTotal = input.hasCorners
     ? input.squareCorners * input.product.square_corner_price
     : 0;
@@ -284,7 +295,7 @@ export async function createFoamOrder(
     product_name: input.product.name,
     height_cm: input.heightCm,
     width_cm: input.widthCm,
-    price_per_meter: input.product.price_per_meter,
+    price_per_meter: effectivePricePerMeter,  // ← save the actual price used
     square_corner_price: input.product.square_corner_price,
     triangle_corner_price: input.product.triangle_corner_price,
     total_length_meters: totalLength,

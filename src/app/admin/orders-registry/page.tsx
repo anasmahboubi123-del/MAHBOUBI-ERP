@@ -16,7 +16,7 @@ import Link from "next/link";
 // ============================================================
 // TYPES
 // ============================================================
-type DbOrder = Database["public"]["Tables"]["orders"]["Row"];
+type DbOrder = Database["public"]["Tables"]["orders"]["Row"] & { created_by?: string };
 type DbOrderItem = Database["public"]["Tables"]["order_items"]["Row"];
 type DbOrderPart = Database["public"]["Tables"]["order_parts"]["Row"];
 type DbOrderSeddari = Database["public"]["Tables"]["order_seddars"]["Row"];

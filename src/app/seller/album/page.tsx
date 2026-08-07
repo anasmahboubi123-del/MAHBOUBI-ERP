@@ -1,110 +1,204 @@
-"use client";
+// src/components/seller/AlbumSection.tsx
+'use client';
 
-import { useState } from "react";
-import Link from "next/link";
+import { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import Image from 'next/image';
+import { ImageIcon } from 'lucide-react';
+import { AlbumItem } from '@/types/seller.types';
+import { getPublicImageUrl, ALBUM_CATEGORIES, AlbumCategory } from '@/lib/supabase-seller';
+import { Skeleton } from '@/components/seller/SkeletonLoaders';
 
-// بيانات الألبوم — يملأها المدير لاحقاً
-const albumCategories = [
-  {
-    id: "sewing",
-    name: "طريقة الخياطة",
-    images: [
-      { id: 1, src: "/images/album/sewing-1.jpg", title: "خياطة الزيب" },
-      { id: 2, src: "/images/album/sewing-2.jpg", title: "خياطة التاك" },
-      { id: 3, src: "/images/album/sewing-3.jpg", title: "تثبيت المخاد" },
-    ],
-  },
-  {
-    id: "works",
-    name: "أعمالنا",
-    images: [
-      { id: 4, src: "/images/album/work-1.jpg", title: "صالون كلاسيكي" },
-      { id: 5, src: "/images/album/work-2.jpg", title: "صالون عصري" },
-      { id: 6, src: "/images/album/work-3.jpg", title: "خامية فاخرة" },
-    ],
-  },
-  {
-    id: "fabrics",
-    name: "الأثواب والأقمشة",
-    images: [
-      { id: 7, src: "/images/album/fabric-1.jpg", title: "ثوب مخملي" },
-      { id: 8, src: "/images/album/fabric-2.jpg", title: "ثوب كريمي" },
-    ],
-  },
-];
+interface AlbumSectionProps {
+  items: AlbumItem[];
+  loading?: boolean;
+}
 
-export default function AlbumPage() {
-  const [selectedCategory, setSelectedCategory] = useState("works");
-  const [modalImage, setModalImage] = useState<string | null>(null);
+export default function AlbumSection({ items, loading }: AlbumSectionProps) {
+  const [selectedCategory, setSelectedCategory] = useState<AlbumCategory | null>(null);
+  const [selectedImage, setSelectedImage] = useState<AlbumItem | null>(null);
 
-  const currentCategory = albumCategories.find((c) => c.id === selectedCategory);
+  const filteredItems = selectedCategory
+    ? items.filter((item) => item.category === selectedCategory)
+    : items;
+
+  if (loading) {
+    return (
+      <section>
+        <div className="flex items-center gap-2 mb-4">
+          <ImageIcon className="w-5 h-5 text-[#C9A84C]" />
+          <h2 className="text-lg font-bold text-gray-900">ألبوم الأعمال</h2>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} className="rounded-[16px] overflow-hidden">
+              <Skeleton className="h-48 w-full" />
+            </div>
+          ))}
+        </div>
+      </section>
+    );
+  }
+
+  if (items.length === 0) {
+    return (
+      <section>
+        <div className="flex items-center gap-2 mb-4">
+          <ImageIcon className="w-5 h-5 text-[#C9A84C]" />
+          <h2 className="text-lg font-bold text-gray-900">ألبوم الأعمال</h2>
+        </div>
+        <div className="bg-white rounded-[20px] shadow-sm p-8 text-center">
+          <ImageIcon className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+          <p className="text-gray-400 text-sm">لا توجد صور في الألبوم</p>
+        </div>
+      </section>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-[#F5F0E8] p-6" dir="rtl">
-      <header className="bg-[#1B5E3B] text-white p-4 rounded-xl mb-6 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Link href="/seller" className="text-[#C9A84C] hover:text-white">← رجوع</Link>
-          <h1 className="font-bold text-xl">ألبوم أعمال المحبوبي</h1>
-        </div>
-      </header>
+    <section>
+      <div className="flex items-center gap-2 mb-4">
+        <ImageIcon className="w-5 h-5 text-[#C9A84C]" />
+        <h2 className="text-lg font-bold text-gray-900">ألبوم الأعمال</h2>
+        <span className="px-2 py-0.5 bg-[#1B5E3B]/10 text-[#1B5E3B] text-[11px] font-bold rounded-full">
+          {filteredItems.length}
+        </span>
+      </div>
 
-      {/* أزرار الفئات */}
-      <div className="flex gap-3 mb-8 overflow-x-auto pb-2">
-        {albumCategories.map((cat) => (
+      {/* أزرار الأقسام */}
+      <div className="flex gap-2 mb-5 overflow-x-auto pb-2 scrollbar-hide">
+        <button
+          onClick={() => setSelectedCategory(null)}
+          className={`px-4 py-2.5 rounded-xl font-bold whitespace-nowrap text-sm transition-all duration-300 ${
+            selectedCategory === null
+              ? 'bg-[#1B5E3B] text-white shadow-lg scale-105'
+              : 'bg-white text-[#1B5E3B] border border-[#E8E4DC] hover:bg-[#1B5E3B]/10'
+          }`}
+        >
+          📁 الكل
+        </button>
+        {ALBUM_CATEGORIES.map((cat) => (
           <button
             key={cat.id}
             onClick={() => setSelectedCategory(cat.id)}
-            className={`px-6 py-3 rounded-xl font-bold whitespace-nowrap transition-colors ${
+            className={`px-4 py-2.5 rounded-xl font-bold whitespace-nowrap text-sm transition-all duration-300 ${
               selectedCategory === cat.id
-                ? "bg-[#1B5E3B] text-white"
-                : "bg-white text-[#1B5E3B] border border-[#E8E4DC] hover:bg-[#1B5E3B]/10"
+                ? 'bg-[#1B5E3B] text-white shadow-lg scale-105'
+                : 'bg-white text-[#1B5E3B] border border-[#E8E4DC] hover:bg-[#1B5E3B]/10'
             }`}
           >
-            {cat.name}
+            {cat.icon} {cat.name}
           </button>
         ))}
       </div>
 
       {/* شبكة الصور */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-        {currentCategory?.images.map((img) => (
-          <button
-            key={img.id}
-            onClick={() => setModalImage(img.src)}
-            className="group relative aspect-square rounded-xl overflow-hidden shadow-md hover:shadow-xl transition-all border border-[#E8E4DC] bg-white"
-          >
-            <img
-              src={img.src}
-              alt={img.title}
-              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-              onError={(e) => {
-                (e.target as HTMLImageElement).src = "/images/logo.jpg";
-              }}
-            />
-            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
-              <span className="text-white text-3xl opacity-0 group-hover:opacity-100 transition-opacity">🔍</span>
-            </div>
-            <div className="absolute bottom-0 left-0 right-0 bg-[#1B5E3B]/90 p-2">
-              <p className="text-white text-xs text-center">{img.title}</p>
-            </div>
-          </button>
-        ))}
-      </div>
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={selectedCategory || 'all'}
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -10 }}
+          transition={{ duration: 0.25 }}
+          className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3"
+        >
+          {filteredItems.map((item, index) => {
+            const imageUrl = getPublicImageUrl('seller-album', item.image_url);
 
-      {/* Modal تكبير */}
-      {modalImage && (
-        <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4" onClick={() => setModalImage(null)}>
-          <div className="relative max-w-5xl w-full">
-            <button
-              onClick={() => setModalImage(null)}
-              className="absolute -top-12 left-0 w-10 h-10 bg-[#1B5E3B] text-white rounded-full flex items-center justify-center hover:bg-[#C9A84C] transition-colors"
-            >
-              ✕
-            </button>
-            <img src={modalImage} alt="عمل" className="w-full h-auto max-h-[85vh] object-contain rounded-xl" />
-          </div>
+            return (
+              <motion.button
+                key={item.id}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: index * 0.05 }}
+                whileHover={{ y: -4, scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={() => setSelectedImage(item)}
+                className="group relative overflow-hidden rounded-[16px] bg-white shadow-sm hover:shadow-lg transition-all duration-500 text-right"
+              >
+                <div className="relative h-48 overflow-hidden bg-[#F5F0E8]">
+                  {imageUrl ? (
+                    <Image
+                      src={imageUrl}
+                      alt={item.title}
+                      fill
+                      className="object-cover transition-transform duration-700 group-hover:scale-110"
+                      sizes="(max-width: 640px) 50vw, 20vw"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-4xl">🛋️</div>
+                  )}
+                  <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/70 to-transparent" />
+                </div>
+
+                <div className="absolute bottom-0 inset-x-0 p-3">
+                  <h4 className="font-bold text-white text-xs truncate">{item.title}</h4>
+                  <p className="text-[#C9A84C] text-xs font-semibold mt-0.5">
+                    {item.price.toLocaleString('ar-MA')} د.م
+                  </p>
+                </div>
+
+                {item.category && (
+                  <div className="absolute top-2 right-2 bg-[#1B5E3B]/80 text-white text-[10px] px-2 py-0.5 rounded-md backdrop-blur-sm">
+                    {ALBUM_CATEGORIES.find((c) => c.id === item.category)?.name || item.category}
+                  </div>
+                )}
+              </motion.button>
+            );
+          })}
+        </motion.div>
+      </AnimatePresence>
+
+      {filteredItems.length === 0 && (
+        <div className="bg-white rounded-[20px] shadow-sm p-8 text-center mt-4">
+          <p className="text-gray-400 text-sm">لا توجد صور في هذا القسم</p>
         </div>
       )}
-    </div>
+
+      {/* Lightbox */}
+      <AnimatePresence>
+        {selectedImage && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+            onClick={() => setSelectedImage(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.9 }}
+              animate={{ scale: 1 }}
+              exit={{ scale: 0.9 }}
+              className="relative max-w-lg w-full"
+              onClick={(e: React.MouseEvent) => e.stopPropagation()}
+            >
+              {(() => {
+                const imageUrl = getPublicImageUrl('seller-album', selectedImage.image_url);
+                return imageUrl && (
+                  <Image
+                    src={imageUrl}
+                    alt={selectedImage.title}
+                    width={600}
+                    height={400}
+                    className="w-full rounded-2xl"
+                  />
+                );
+              })()}
+              <div className="absolute bottom-0 inset-x-0 p-4 bg-gradient-to-t from-black/80 to-transparent rounded-b-2xl">
+                <h3 className="font-bold text-white">{selectedImage.title}</h3>
+                <p className="text-[#C9A84C] font-semibold">
+                  {selectedImage.price.toLocaleString('ar-MA')} د.م
+                </p>
+                {selectedImage.category && (
+                  <span className="text-white/70 text-xs mt-1 inline-block">
+                    {ALBUM_CATEGORIES.find((c) => c.id === selectedImage.category)?.name}
+                  </span>
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </section>
   );
 }

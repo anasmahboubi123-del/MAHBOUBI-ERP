@@ -57,6 +57,7 @@ interface OrderItemUI {
   details?: any;
   calculations?: any;
   lineNotes?: string;
+  notes?: string;
 }
 
 /* ─── Helpers ─── */
@@ -380,7 +381,38 @@ function ProductionTab({
                   <p className="text-xs text-gray-400">الكمية: {item.quantity}</p>
                 </div>
               </div>
-              {item.details && (
+
+              {/* ✅ تفاصيل الصالون الرومي */}
+              {item.details?.isRomani && (
+                <div className="mt-3 p-3 bg-amber-50 rounded-xl border border-amber-100">
+                  <p className="font-bold text-amber-800 text-sm mb-2">
+                    🛋️ صالون رومي — {item.details.model?.name} ({item.details.color?.name})
+                  </p>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-xs text-gray-700">
+                    <span>📐 سدادر: {item.calculations?.seddarsCount || 0}</span>
+                    <span>📏 الطول: {item.calculations?.totalLengthMeters || 0} م</span>
+                    <span>🧽 كوتيك: +{item.calculations?.totalKotikMeters || 0} م</span>
+                    <span>🧽 فورمجة: {item.calculations?.totalFormajaMeters || 0} م</span>
+                    <span>📊 المجموع: {item.calculations?.totalMeters || 0} م</span>
+                    <span>💰 السعر: {item.totalPrice?.toLocaleString()} درهم</span>
+                  </div>
+                  {item.details.seddars?.map((s: any, i: number) => (
+                    <div key={s.id} className="mt-2 text-xs text-gray-600 bg-white rounded-lg p-2">
+                      سداري #{i + 1}: {s.length_cm} سم
+                      {s.has_kotik && ` + ${s.kotik_count} كوتيك`}
+                      {s.has_formaja && ` + فورمجة ${s.formaja_length_meters}م`}
+                      = {s.total_price?.toLocaleString()} درهم
+                    </div>
+                  ))}
+                  {item.notes && (
+                    <p className="mt-2 text-xs text-amber-700 bg-amber-100 rounded-lg p-2">
+                      📝 {item.notes}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {item.details && !item.details.isRomani && (
                 <div className="mt-3 text-xs text-gray-600 grid grid-cols-2 gap-1">
                   {item.details.seddari && <span>📐 سداري: {item.details.seddari.lengthCm}×{item.details.seddari.widthCm} سم</span>}
                   {item.details.fabric && <span>🧵 قماش: {item.details.fabric.name}</span>}
@@ -507,7 +539,6 @@ function FinancialTab({ order, payments }: { order: any; payments: PaymentUI[] }
       date: new Date().toISOString(),
     });
 
-    // Recalculate
     const { data: orderRow } = await supabase.from("orders").select("total_amount, deposit_amount").eq("id", order.id).single();
     if (orderRow) {
       const newDeposit = (orderRow.deposit_amount || 0) + amount;
@@ -526,7 +557,6 @@ function FinancialTab({ order, payments }: { order: any; payments: PaymentUI[] }
 
   return (
     <div className="space-y-6">
-      {/* Summary */}
       <div className="bg-white rounded-2xl border-2 border-[#C9A84C] overflow-hidden">
         <div className="p-4 bg-[#C9A84C]/10">
           <h3 className="font-bold text-lg flex items-center gap-2">💰 الملخص المالي</h3>
@@ -541,7 +571,6 @@ function FinancialTab({ order, payments }: { order: any; payments: PaymentUI[] }
         </div>
       </div>
 
-      {/* Payments History */}
       <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
         <h3 className="text-lg font-bold text-gray-800 mb-4">📋 سجل الدفعات</h3>
         {payments.length === 0 && <p className="text-gray-400 text-sm">لا توجد دفعات مسجلة.</p>}
@@ -558,7 +587,6 @@ function FinancialTab({ order, payments }: { order: any; payments: PaymentUI[] }
         </div>
       </div>
 
-      {/* Add Payment */}
       <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
         <h3 className="text-lg font-bold text-gray-800 mb-4">➕ إضافة دفعة</h3>
         <div className="grid grid-cols-2 gap-3">
@@ -604,7 +632,7 @@ function FinancialTab({ order, payments }: { order: any; payments: PaymentUI[] }
 }
 
 /* ═══════════════════════════════════════════
-   ✅ FIX: PrintModal props adapter
+   PrintModal props adapter
    ═══════════════════════════════════════════ */
 function PrintModalAdapter({
   order,
@@ -680,7 +708,6 @@ export default function OrderDetailPage() {
     if (!orderId) return;
     setLoading(true);
     try {
-      // Order + items + tasks + history + payments (single query)
       const { data: orderData } = await supabase
         .from("orders")
         .select("*, order_items(*), production_tasks(*), order_history(*), payments(*)")
@@ -728,7 +755,6 @@ export default function OrderDetailPage() {
         })));
       }
 
-      // Messages (keep old table)
       const { data: msgs } = await supabase
         .from("messages")
         .select("*")
@@ -761,7 +787,6 @@ export default function OrderDetailPage() {
       .update({ status: "confirmed", confirmed_at: new Date().toISOString(), updated_at: new Date().toISOString() })
       .eq("id", order.id);
 
-    // Create production tasks if not exist
     const { data: existingTasks } = await supabase.from("production_tasks").select("id").eq("order_id", order.id);
     if (!existingTasks || existingTasks.length === 0) {
       for (const item of items) {
@@ -786,7 +811,6 @@ export default function OrderDetailPage() {
       }
     }
 
-    // Log history
     await supabase.from("order_history").insert({
       order_id: order.id,
       status: "confirmed",
@@ -839,7 +863,6 @@ export default function OrderDetailPage() {
   const daysLeft = getDaysLeft(order.delivery_expected_date);
   const hasTapis = items.some((i) => i.productType === "tapis");
 
-  // Images & notes from order_items details or order.production_notes
   let images: string[] = [];
   let notesArr: string[] = [];
   items.forEach((item) => {
@@ -890,7 +913,6 @@ export default function OrderDetailPage() {
             </div>
           </div>
 
-          {/* Quick Status Change */}
           {order.status !== "draft" && order.status !== "cancelled" && (
             <div className="mt-4 flex flex-wrap gap-2">
               {["confirmed", "production", "tailor_working", "quality_check", "ready", "delivered", "paid"].map((s) => (
@@ -907,7 +929,6 @@ export default function OrderDetailPage() {
             </div>
           )}
 
-          {/* Tapis Alert */}
           {hasTapis && order.status !== "delivered" && order.status !== "paid" && (
             <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-xl flex items-start gap-3">
               <span className="text-2xl">📞</span>
@@ -918,7 +939,6 @@ export default function OrderDetailPage() {
             </div>
           )}
 
-          {/* Info Cards */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
             <div className="bg-gray-50 rounded-xl p-4">
               <p className="text-xs text-gray-500 mb-1">👤 الزبون</p>
@@ -975,7 +995,6 @@ export default function OrderDetailPage() {
         {activeTab === "timeline" && <TimelineTab events={timeline} />}
       </div>
 
-      {/* Print Modal */}
       {showPrint && (
         <PrintModalAdapter
           order={order}

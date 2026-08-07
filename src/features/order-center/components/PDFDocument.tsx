@@ -7,7 +7,6 @@ import {
 import type { OrderItem, DocumentLanguage, PrintOptions } from "../types";
 import { docTitle, t } from "../i18n/documents";
 
-// ─── Arabic Font ───
 Font.register({
   family: "Amiri",
   src: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/amiri/Amiri-Regular.ttf",
@@ -17,7 +16,6 @@ Font.register({
   src: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/amiri/Amiri-Bold.ttf",
 });
 
-// ─── Colors ───
 const C = {
   green: "#1B5E38",
   gold: "#C9A84C",
@@ -27,7 +25,6 @@ const C = {
   red: "#DC2626",
 };
 
-// ─── Props ───
 interface Props {
   orderItems: OrderItem[];
   orderNumber: string;
@@ -40,21 +37,17 @@ interface Props {
   deliveryCost?: number;
   documentType: "devis" | "bon_de_commande" | "facture";
   printOptions: PrintOptions;
-  conditions?: string[];
+  conditions?: string[]; // ✅ NEW: loaded from DB
   bgBase64: string;
 }
 
-// ─── A4 dimensions in points ───
 const PAGE_W = 595;
 const PAGE_H = 842;
-
-// Safe writing area (calculated from letterhead image)
-const SAFE_TOP = 92;      // below logo + top decorations
-const SAFE_BOTTOM = 58;   // above footer
+const SAFE_TOP = 92;
+const SAFE_BOTTOM = 58;
 const SAFE_LEFT = 42;
 const SAFE_RIGHT = 42;
 
-// ─── Styles ───
 const styles = StyleSheet.create({
   page: {
     position: "relative",
@@ -64,7 +57,6 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: C.dark,
   },
-  // Background that repeats on every page
   bgWrap: {
     position: "absolute",
     top: 0,
@@ -77,7 +69,6 @@ const styles = StyleSheet.create({
     width: PAGE_W,
     height: PAGE_H,
   },
-  // Content sits inside the safe area
   content: {
     position: "absolute",
     top: SAFE_TOP,
@@ -86,7 +77,6 @@ const styles = StyleSheet.create({
     bottom: SAFE_BOTTOM,
     zIndex: 1,
   },
-  // ── Doc Title (top-right) ──
   docHeader: {
     flexDirection: "row-reverse",
     justifyContent: "space-between",
@@ -106,7 +96,6 @@ const styles = StyleSheet.create({
     textAlign: "right",
     marginTop: 2,
   },
-  // ── Customer ──
   section: {
     marginBottom: 6,
     padding: 7,
@@ -138,7 +127,6 @@ const styles = StyleSheet.create({
     fontSize: 10,
     textAlign: "right",
   },
-  // ── Products ──
   productCard: {
     marginBottom: 5,
     padding: 5,
@@ -189,7 +177,6 @@ const styles = StyleSheet.create({
     color: C.gold,
     textAlign: "left",
   },
-  // ── Details ──
   detailRow: {
     flexDirection: "row-reverse",
     marginBottom: 1,
@@ -221,7 +208,6 @@ const styles = StyleSheet.create({
     fontFamily: "Amiri",
     textAlign: "right",
   },
-  // ── Totals ──
   totalsBox: {
     marginTop: 5,
     padding: 7,
@@ -249,7 +235,6 @@ const styles = StyleSheet.create({
     color: C.green,
     textAlign: "right",
   },
-  // ── Conditions ──
   conditions: {
     marginTop: 6,
     padding: 5,
@@ -264,7 +249,6 @@ const styles = StyleSheet.create({
     fontFamily: "Amiri",
     textAlign: "right",
   },
-  // ── Signatures ──
   signatures: {
     flexDirection: "row-reverse",
     justifyContent: "space-between",
@@ -288,7 +272,6 @@ const styles = StyleSheet.create({
     color: C.textLight,
     textAlign: "center",
   },
-  // ── QR ──
   qrCode: {
     width: 45,
     height: 45,
@@ -298,7 +281,6 @@ const styles = StyleSheet.create({
   },
 });
 
-// ─── Component ───
 export function PDFDocument({
   orderItems,
   orderNumber,
@@ -311,7 +293,7 @@ export function PDFDocument({
   deliveryCost = 0,
   documentType,
   printOptions,
-  conditions = [],
+  conditions = [], // ✅ from DB
   bgBase64,
 }: Props) {
   const lang = printOptions.language;
@@ -332,186 +314,14 @@ export function PDFDocument({
   const qrData = encodeURIComponent(`${title} #${orderNumber} — ${customerName}`);
   const qrSrc = `https://api.qrserver.com/v1/create-qr-code/?size=120x120&margin=0&data=${qrData}`;
 
-  // ─── Render Product Details ───
-  const renderProductDetails = (item: OrderItem) => {
-    const d = item.details || {};
-    const rows: React.ReactNode[] = [];
-
-    // FOAM
-    if (item.productType === "foam") {
-      if (d.product?.name) rows.push(<Detail key="p" label={t(lang, "fabric")} value={d.product.name} />);
-      if (d.height_cm) rows.push(<Detail key="h" label={t(lang, "height")} value={`${d.height_cm} cm`} />);
-      if (d.width_cm) rows.push(<Detail key="w" label={t(lang, "width")} value={`${d.width_cm} cm`} />);
-      if (d.seddars?.length > 0) {
-        rows.push(
-          <View key="seddars" style={{ marginTop: 2 }}>
-            <Text style={styles.detailBlockTitle}>{t(lang, "seddars")}:</Text>
-            {d.seddars.map((s: any, i: number) => (
-              <Text key={i} style={styles.detailBlockItem}>
-                #{s.index} — {t(lang, "length")}: {s.length_m}m
-                {printOptions.includePrices && s.price ? ` = ${s.price} ${t(lang, "currency_symbol")}` : ""}
-              </Text>
-            ))}
-          </View>
-        );
-      }
-      if (d.corners?.has_corners) {
-        rows.push(
-          <View key="corners" style={{ marginTop: 2 }}>
-            <Text style={styles.detailBlockTitle}>{t(lang, "corners")}: ✅</Text>
-            {d.corners.square?.qty > 0 && (
-              <Text style={styles.detailBlockItem}>
-                {t(lang, "square")} × {d.corners.square.qty} = {d.corners.square.total} {t(lang, "currency_symbol")}
-              </Text>
-            )}
-            {d.corners.triangle?.qty > 0 && (
-              <Text style={styles.detailBlockItem}>
-                {t(lang, "triangle")} × {d.corners.triangle.qty} = {d.corners.triangle.total} {t(lang, "currency_symbol")}
-              </Text>
-            )}
-          </View>
-        );
-      }
-    }
-
-    // WOOD
-    if (item.productType === "wood") {
-      if (d.model?.name) rows.push(<Detail key="m" label={t(lang, "fabric")} value={`${d.model.name} (${d.model.code || ""})`} />);
-      if (d.model?.wood_type) rows.push(<Detail key="wt" label={t(lang, "fabric")} value={d.model.wood_type} />);
-      if (d.salonShape) rows.push(<Detail key="sh" label={t(lang, "shape")} value={d.salonShape} />);
-      if (d.seddars?.length > 0) {
-        rows.push(
-          <View key="seddars" style={{ marginTop: 2 }}>
-            <Text style={styles.detailBlockTitle}>{t(lang, "seddars")}:</Text>
-            {d.seddars.map((s: any, i: number) => (
-              <Text key={i} style={styles.detailBlockItem}>
-                #{s.index} — {s.length_cm}×{s.width_cm}×{s.height_cm} cm
-                {s.junction_type && s.junction_type !== "none" ? ` (${s.junction_type})` : ""}
-                {printOptions.includePrices && s.price ? ` = ${s.price} ${t(lang, "currency_symbol")}` : ""}
-              </Text>
-            ))}
-          </View>
-        );
-      }
-      if (d.extras) {
-        const activeExtras = Object.entries(d.extras).filter(([_, v]: [string, any]) => v?.qty > 0);
-        if (activeExtras.length > 0) {
-          rows.push(
-            <View key="extras" style={{ marginTop: 2 }}>
-              <Text style={styles.detailBlockTitle}>{t(lang, "extras")}:</Text>
-              {activeExtras.map(([k, v]: [string, any]) => (
-                <Text key={k} style={styles.detailBlockItem}>
-                  {v.item_name || k} × {v.qty} = {v.total} {t(lang, "currency_symbol")}
-                </Text>
-              ))}
-            </View>
-          );
-        }
-      }
-    }
-
-    // SALON
-    if (item.productType === "salon") {
-      if (d.fabric?.name) rows.push(<Detail key="f" label={t(lang, "fabric")} value={d.fabric.name} />);
-      if (d.seddars?.length > 0) {
-        rows.push(
-          <View key="seddars" style={{ marginTop: 2 }}>
-            <Text style={styles.detailBlockTitle}>{t(lang, "seddars")}:</Text>
-            {d.seddars.map((s: any, i: number) => (
-              <Text key={i} style={styles.detailBlockItem}>
-                #{s.index} — {s.length_cm}×{s.width_cm}×{s.height_cm} cm
-                {s.junction && s.junction !== "none" ? ` (${s.junction})` : ""}
-                {printOptions.includePrices && s.fabric_meters ? ` = ${s.fabric_meters}m` : ""}
-              </Text>
-            ))}
-          </View>
-        );
-      }
-      if (d.stitches?.length > 0) {
-        rows.push(
-          <View key="stitch" style={{ marginTop: 2 }}>
-            <Text style={styles.detailBlockTitle}>{t(lang, "stitch")}:</Text>
-            {d.stitches.map((s: any, i: number) => (
-              <Text key={i} style={styles.detailBlockItem}>
-                {t(lang, "seddars")} #{s.seddari_index}: {s.style_name} = {s.price} {t(lang, "currency_symbol")}
-              </Text>
-            ))}
-          </View>
-        );
-      }
-      if (d.cushions?.enabled) {
-        rows.push(
-          <View key="cushions" style={{ marginTop: 2 }}>
-            <Text style={styles.detailBlockTitle}>{t(lang, "cushions")}: ✅</Text>
-            <Text style={styles.detailBlockItem}>
-              {t(lang, "quantity")}: {d.cushions.total_count} | {t(lang, "height")}: {d.cushions.size_cm} cm
-              {printOptions.includePrices ? ` = ${d.cushions.total} ${t(lang, "currency_symbol")}` : ""}
-            </Text>
-          </View>
-        );
-      }
-      if (d.decor_cushions?.enabled) {
-        rows.push(
-          <View key="decor" style={{ marginTop: 2 }}>
-            <Text style={styles.detailBlockTitle}>{t(lang, "decor_cushions")}: ✅</Text>
-            {d.decor_cushions.items?.map((it: any, i: number) => (
-              <Text key={i} style={styles.detailBlockItem}>
-                {it.shape_name} × {it.count} = {it.total} {t(lang, "currency_symbol")}
-              </Text>
-            ))}
-          </View>
-        );
-      }
-      if (d.extras?.lhayef?.enabled) {
-        rows.push(<Detail key="lh" label={t(lang, "extras")} value={`${d.extras.lhayef.length_m}m = ${d.extras.lhayef.total} ${t(lang, "currency_symbol")}`} />);
-      }
-    }
-
-    // KHAMIYA
-    if (item.productType === "khamiya") {
-      if (d.fabric?.name) rows.push(<Detail key="f" label={t(lang, "fabric")} value={d.fabric.name} />);
-      if (d.shape) rows.push(<Detail key="sh" label={t(lang, "shape")} value={d.shape === "solid_piece" ? "قطعة واحدة" : d.shape} />);
-      if (d.fabric?.width_m && d.fabric?.height_m) {
-        rows.push(<Detail key="dim" label={t(lang, "width")} value={`${d.fabric.width_m}m × ${d.fabric.height_m}m`} />);
-      }
-      if (d.sewing?.style_name) {
-        rows.push(<Detail key="sw" label={t(lang, "stitch")} value={`${d.sewing.style_name} = ${d.sewing.total_price} ${t(lang, "currency_symbol")}`} />);
-      }
-      if (d.aqiq) {
-        rows.push(<Detail key="aq" label={t(lang, "fabric")} value={`${d.aqiq.shape_name} = ${d.aqiq.total} ${t(lang, "currency_symbol")}`} />);
-      }
-      if (d.background?.enabled) {
-        rows.push(<Detail key="bg" label={t(lang, "fabric")} value={`${d.background.fabric_name} = ${d.background.total} ${t(lang, "currency_symbol")}`} />);
-      }
-    }
-
-    // TAPIS
-    if (item.productType === "tapis") {
-      if (d.calculations?.original_length_m && d.calculations?.original_width_m) {
-        rows.push(<Detail key="dim" label={t(lang, "length")} value={`${d.calculations.original_length_m}m × ${d.calculations.original_width_m}m`} />);
-      }
-      if (d.calculations?.final_area_m2) {
-        rows.push(<Detail key="area" label={t(lang, "area")} value={`${d.calculations.final_area_m2} m²`} />);
-      }
-      if (printOptions.includePrices && d.unit_price && d.calculations?.final_area_m2) {
-        rows.push(<Detail key="price" label={t(lang, "total_price")} value={`${d.calculations.final_area_m2} × ${d.unit_price} = ${item.totalPrice} ${t(lang, "currency_symbol")}`} />);
-      }
-    }
-
-    return <View>{rows}</View>;
-  };
-
   return (
     <Document>
       <Page size="A4" style={styles.page}>
-        {/* Background — repeats on every page via wrap */}
         <View style={styles.bgWrap}>
           <Image src={bgBase64} style={styles.bgImage} />
         </View>
 
-        {/* Content Layer — inside safe area */}
         <View style={styles.content}>
-          {/* Doc Title + Meta */}
           <View style={styles.docHeader}>
             <View style={{ alignItems: "flex-end" }}>
               <Text style={styles.docTitle}>{title}</Text>
@@ -524,7 +334,6 @@ export function PDFDocument({
             </View>
           </View>
 
-          {/* Customer Info */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>{t(lang, "client")}</Text>
             <View style={styles.rowRTL}>
@@ -543,7 +352,6 @@ export function PDFDocument({
             )}
           </View>
 
-          {/* Products */}
           <View>
             <Text style={styles.sectionTitle}>
               {t(lang, "products")} ({orderItems.length})
@@ -564,12 +372,10 @@ export function PDFDocument({
                     </Text>
                   )}
                 </View>
-                {printOptions.includeProductionDetails && renderProductDetails(item)}
               </View>
             ))}
           </View>
 
-          {/* Financial Summary */}
           {printOptions.includePrices && (
             <View style={styles.totalsBox}>
               <Text style={[styles.sectionTitle, { marginBottom: 3 }]}>
@@ -622,7 +428,7 @@ export function PDFDocument({
             </View>
           )}
 
-          {/* Conditions */}
+          {/* ✅ Conditions from DB */}
           {conditions.length > 0 && (
             <View style={styles.conditions}>
               <Text style={[styles.sectionTitle, { marginBottom: 2 }]}>
@@ -636,7 +442,6 @@ export function PDFDocument({
             </View>
           )}
 
-          {/* Signatures */}
           {printOptions.includeSignatures && (
             <View style={styles.signatures}>
               <View style={styles.signatureBox}>
@@ -656,22 +461,11 @@ export function PDFDocument({
             </View>
           )}
 
-          {/* QR Code */}
           {printOptions.includeQrCode && (
             <Image src={qrSrc} style={styles.qrCode} />
           )}
         </View>
       </Page>
     </Document>
-  );
-}
-
-// ─── Detail Row Helper ───
-function Detail({ label, value }: { label: string; value: string | number }) {
-  return (
-    <View style={styles.detailRow}>
-      <Text style={styles.detailLabel}>{label}:</Text>
-      <Text style={styles.detailValue}>{value}</Text>
-    </View>
   );
 }
