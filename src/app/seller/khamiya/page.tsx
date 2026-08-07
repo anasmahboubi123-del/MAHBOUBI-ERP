@@ -119,41 +119,543 @@ function ManagerGate({ open, title, onSuccess, onCancel }: {
 
 /* ═══════════════════════════════════════
    SVG معاينة الخامية
-   ═══════════════════════════════════════ */
-function KhamiyaSVG({ width, height, shape, hasBackground }: {
-  width: number; height: number; shape: "solid_piece" | "cut_middle"; hasBackground: boolean;
+   ═══════════════════════════════════════ */function KhamiyaSVG({
+  width,
+  height,
+  shape,
+  hasBackground,
+  step,
+  selectedProductName,
+}: {
+  width: number;
+  height: number;
+  shape: "solid_piece" | "cut_middle";
+  hasBackground: boolean;
+  step: number;
+  selectedProductName?: string;
 }) {
-  const scale = 40;
-  const sw = Math.max(width * scale, 200);
-  const sh = Math.max(height * scale, 150);
-  const cutX = shape === "cut_middle" ? sw / 2 : null;
+  const vbW = 800;
+  const vbH = 640;
+
+  /* ── منطقة الرسم ── */
+  const cx = 200;
+  const cy = 90;
+  const maxCW = 400;
+  const maxCH = 420;
+
+  const scaleW = Math.min(width / 5, 1);
+  const scaleH = Math.min(height / 4, 1);
+  const cw = maxCW * scaleW;
+  const ch = maxCH * scaleH;
+
+  const rodY = cy - 25;
+  const rodX1 = cx - 25;
+  const rodX2 = cx + cw + 25;
+
+  const isDimensionStep = step === 2;
+  const isSedadarStep = step === 4;
+  const isFormageStep = step === 5;
+  const isReviewStep = step === 8;
+
+  const baseOpacity = isDimensionStep ? 0.4 : isFormageStep ? 0.5 : 1;
+
+  /* ── مسارات الستارة ── */
+  const mainCurtainPath = useMemo(() => {
+    if (shape === "solid_piece") {
+      return `
+        M ${cx},${cy}
+        L ${cx + cw},${cy}
+        C ${cx + cw + 25},${cy + ch * 0.15} ${cx + cw + 35},${cy + ch * 0.45} ${cx + cw - 15},${cy + ch * 0.82}
+        C ${cx + cw - 5},${cy + ch * 0.95} ${cx + cw * 0.75},${cy + ch + 12} ${cx + cw * 0.5},${cy + ch + 6}
+        C ${cx + cw * 0.25},${cy + ch + 12} ${cx + 5},${cy + ch * 0.95} ${cx + 15},${cy + ch * 0.82}
+        C ${cx - 35},${cy + ch * 0.45} ${cx - 25},${cy + ch * 0.15} ${cx},${cy}
+        Z
+      `;
+    }
+    return "";
+  }, [shape, cx, cy, cw, ch]);
+
+  const leftPiecePath = useMemo(() => {
+    if (shape !== "cut_middle") return "";
+    const pw = (cw - 24) / 2;
+    return `
+      M ${cx},${cy}
+      L ${cx + pw},${cy}
+      C ${cx + pw + 12},${cy + ch * 0.25} ${cx + pw + 8},${cy + ch * 0.65} ${cx + pw - 8},${cy + ch * 0.88}
+      C ${cx + pw * 0.7},${cy + ch + 10} ${cx + 8},${cy + ch * 0.94} ${cx + 12},${cy + ch * 0.78}
+      C ${cx - 18},${cy + ch * 0.42} ${cx - 12},${cy + ch * 0.18} ${cx},${cy}
+      Z
+    `;
+  }, [shape, cx, cy, cw, ch]);
+
+  const rightPiecePath = useMemo(() => {
+    if (shape !== "cut_middle") return "";
+    const pw = (cw - 24) / 2;
+    const rx = cx + pw + 24;
+    return `
+      M ${rx},${cy}
+      L ${rx + pw},${cy}
+      C ${rx + pw + 12},${cy + ch * 0.18} ${rx + pw + 18},${cy + ch * 0.42} ${rx + pw - 12},${cy + ch * 0.78}
+      C ${rx + pw - 8},${cy + ch * 0.94} ${rx + pw * 0.3},${cy + ch + 10} ${rx + 8},${cy + ch * 0.88}
+      C ${rx - 8},${cy + ch * 0.65} ${rx - 12},${cy + ch * 0.25} ${rx},${cy}
+      Z
+    `;
+  }, [shape, cx, cy, cw, ch]);
+
+  const sheerPath = useMemo(() => {
+    const sx = cx + 18;
+    const sw = cw - 36;
+    return `
+      M ${sx},${cy + 4}
+      L ${sx + sw},${cy + 4}
+      C ${sx + sw + 6},${cy + ch * 0.2} ${sx + sw + 10},${cy + ch * 0.6} ${sx + sw - 6},${cy + ch * 0.9}
+      C ${sx + sw - 2},${cy + ch + 4} ${sx + sw * 0.7},${cy + ch + 8} ${sx + sw * 0.5},${cy + ch + 4}
+      C ${sx + sw * 0.3},${cy + ch + 8} ${sx + 2},${cy + ch + 4} ${sx + 6},${cy + ch * 0.9}
+      C ${sx - 10},${cy + ch * 0.6} ${sx - 6},${cy + ch * 0.2} ${sx},${cy + 4}
+      Z
+    `;
+  }, [cx, cy, cw, ch]);
+
+  /* ── السدادر ── */
+  const tassels = useMemo(() => {
+    const arr: { x: number; y: number; n: number; len: number }[] = [];
+    if (shape === "solid_piece") {
+      const count = 7;
+      for (let i = 0; i < count; i++) {
+        const t = (i + 1) / (count + 1);
+        const tx = cx + cw * t;
+        const ty = cy + ch * (0.05 + 0.18 * Math.sin(Math.PI * t)) + (i % 2 === 0 ? 8 : 14);
+        arr.push({ x: tx, y: ty, n: i + 1, len: 12 + (i % 3) * 2 });
+      }
+    } else {
+      const pw = (cw - 24) / 2;
+      [cx, cx + pw + 24].forEach((bx, side) => {
+        const count = 4;
+        for (let i = 0; i < count; i++) {
+          const t = (i + 1) / (count + 1);
+          const tx = bx + pw * t;
+          const ty = cy + ch * (0.06 + 0.16 * Math.sin(Math.PI * t)) + (i % 2 === 0 ? 6 : 12);
+          arr.push({ x: tx, y: ty, n: side * 4 + i + 1, len: 10 + (i % 2) * 3 });
+        }
+      });
+    }
+    return arr;
+  }, [shape, cx, cy, cw, ch]);
+
+  /* ── أماكن الفورمجة ── */
+  const formagePoints = useMemo(() => {
+    const pts: { x: number; y: number }[] = [];
+    const folds = 6;
+    for (let i = 1; i <= folds; i++) {
+      const t = i / (folds + 1);
+      pts.push({
+        x: cx + cw * t,
+        y: cy + ch * (0.25 + 0.08 * Math.sin(i * 1.3)),
+      });
+    }
+    return pts;
+  }, [cx, cy, cw, ch]);
+
+  /* ── ألوان ── */
+  const gold = "#C5A059";
+  const darkGold = "#8B6914";
+  const fabricBase = "#E8DCC4";
+  const fabricShadow = "#D4C4A8";
+  const sheerBase = "#F5F0E8";
+  const sheerShadow = "#E8E0D4";
+
   return (
-    <div className="bg-amber-50/50 rounded-2xl p-6 border border-amber-100">
-      <h3 className="text-amber-900 font-bold text-lg mb-4 text-center">معاينة الخامية</h3>
+    <div className="bg-[#FAF8F5] rounded-2xl p-6 border border-[#E8E0D4] shadow-sm">
+      <h3 className="text-[#5D4037] font-bold text-lg mb-4 text-center tracking-wide">
+        {step === 1 && "معاينة المنتج"}
+        {step === 2 && "الأبعاد"}
+        {step === 3 && "شكل القص"}
+        {step === 4 && "تفاصيل الخياطة — السدادر"}
+        {step === 5 && "الفورمجة"}
+        {step === 8 && "الرسم التنفيذي النهائي"}
+        {![1, 2, 3, 4, 5, 8].includes(step) && "معاينة الخامية"}
+      </h3>
+
       <div className="flex justify-center overflow-auto">
-        <svg width={sw} height={sh + 40} viewBox={`0 0 ${sw} ${sh + 40}`} className="drop-shadow-lg">
+        <svg
+          width="100%"
+          height="auto"
+          viewBox={`0 0 ${vbW} ${vbH}`}
+          className="drop-shadow-sm"
+          style={{ maxHeight: 520 }}
+        >
           <defs>
-            <pattern id="fp" patternUnits="userSpaceOnUse" width="20" height="20">
-              <rect width="20" height="20" fill="#D4A574" />
-              <line x1="0" y1="10" x2="20" y2="10" stroke="#C49A6C" strokeWidth="0.5" opacity="0.5" />
-              <line x1="10" y1="0" x2="10" y2="20" stroke="#C49A6C" strokeWidth="0.5" opacity="0.5" />
+            <linearGradient id="bgGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#FFFFFF" />
+              <stop offset="100%" stopColor="#F5F0E8" />
+            </linearGradient>
+
+            <linearGradient id="fabricGrad" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stopColor={fabricBase} />
+              <stop offset="50%" stopColor="#DDD0B8" />
+              <stop offset="100%" stopColor={fabricShadow} />
+            </linearGradient>
+
+            <linearGradient id="sheerGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={sheerBase} stopOpacity="0.95" />
+              <stop offset="100%" stopColor={sheerShadow} stopOpacity="0.85" />
+            </linearGradient>
+
+            <linearGradient id="rodGrad" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0%" stopColor="#B8964F" />
+              <stop offset="30%" stopColor="#E8C872" />
+              <stop offset="60%" stopColor="#D4AF37" />
+              <stop offset="100%" stopColor="#9A7B3D" />
+            </linearGradient>
+
+            <pattern id="fabricPattern" width="8" height="8" patternUnits="userSpaceOnUse">
+              <rect width="8" height="8" fill="url(#fabricGrad)" />
+              <path d="M0,4 L8,4 M4,0 L4,8" stroke="#C4B59A" strokeWidth="0.4" opacity="0.3" />
             </pattern>
-            <pattern id="bp" patternUnits="userSpaceOnUse" width="10" height="10">
-              <rect width="10" height="10" fill="#F5E6D3" />
-              <circle cx="5" cy="5" r="1" fill="#E0D0C0" />
-            </pattern>
+
+            <filter id="softShadow" x="-10%" y="-10%" width="120%" height="120%">
+              <feDropShadow dx="0" dy="4" stdDeviation="6" floodColor="#8B7355" floodOpacity="0.15" />
+            </filter>
+
+            <marker id="arrowStart" markerWidth="10" markerHeight="10" refX="0" refY="5" orient="auto">
+              <path d="M10,0 L0,5 L10,10" fill={gold} />
+            </marker>
+            <marker id="arrowEnd" markerWidth="10" markerHeight="10" refX="10" refY="5" orient="auto">
+              <path d="M0,0 L10,5 L0,10" fill={gold} />
+            </marker>
           </defs>
-          <rect x="5" y="5" width={sw - 10} height={sh - 10} fill="url(#fp)" stroke="#8B6914" strokeWidth="2" rx="4" />
-          {cutX && (
-            <>
-              <line x1={cutX} y1="5" x2={cutX} y2={sh - 5} stroke="#DC2626" strokeWidth="2" strokeDasharray="8,4" />
-              <text x={cutX} y={sh / 2} fill="#DC2626" fontSize="12" fontWeight="bold" textAnchor="middle" transform={`rotate(-90, ${cutX}, ${sh / 2})`}>قص من الوسط</text>
-            </>
+
+          <rect x="0" y="0" width={vbW} height={vbH} fill="url(#bgGrad)" rx="12" />
+
+          {/* ====== عمود الستارة ====== */}
+          <g opacity={baseOpacity}>
+            <rect x={rodX1} y={rodY - 6} width={rodX2 - rodX1} height={12} fill="url(#rodGrad)" rx="6" />
+            <circle cx={rodX1} cy={rodY} r={14} fill="url(#rodGrad)" />
+            <circle cx={rodX2} cy={rodY} r={14} fill="url(#rodGrad)" />
+            <circle cx={rodX1} cy={rodY} r={8} fill="#F5E6C8" opacity="0.6" />
+            <circle cx={rodX2} cy={rodY} r={8} fill="#F5E6C8" opacity="0.6" />
+          </g>
+
+          {/* ====== طبقة الخلفية ====== */}
+          {(hasBackground || step >= 6 || isReviewStep) && (
+            <g opacity={baseOpacity} filter="url(#softShadow)">
+              <path d={sheerPath} fill="url(#sheerGrad)" stroke="#D4C4B0" strokeWidth="1" />
+              {Array.from({ length: 12 }).map((_, i) => {
+                const tx = cx + 24 + ((cw - 48) / 11) * i;
+                return (
+                  <path
+                    key={`sheer-fold-${i}`}
+                    d={`M ${tx},${cy + 4} Q ${tx + 3},${cy + ch * 0.5} ${tx - 2},${cy + ch + 2}`}
+                    fill="none"
+                    stroke="#D4C4B0"
+                    strokeWidth="0.8"
+                    opacity="0.5"
+                  />
+                );
+              })}
+            </g>
           )}
-          {hasBackground && (
-            <rect x="10" y={sh - 30} width={sw - 20} height="20" fill="url(#bp)" stroke="#D4A574" strokeWidth="1" opacity="0.9" />
+
+          {/* ====== الستارة الرئيسية ====== */}
+          <g opacity={baseOpacity} filter="url(#softShadow)">
+            {shape === "solid_piece" ? (
+              <>
+                <path d={mainCurtainPath} fill="url(#fabricPattern)" stroke={darkGold} strokeWidth="1.5" />
+                {Array.from({ length: 14 }).map((_, i) => {
+                  const t = (i + 1) / 15;
+                  const fx = cx + cw * t;
+                  const sway = Math.sin(t * Math.PI) * 18;
+                  return (
+                    <path
+                      key={`fold-${i}`}
+                      d={`M ${fx},${cy} Q ${fx + sway},${cy + ch * 0.45} ${fx - sway * 0.5},${cy + ch + 6}`}
+                      fill="none"
+                      stroke="#B8A88A"
+                      strokeWidth="1"
+                      opacity="0.45"
+                    />
+                  );
+                })}
+                <path
+                  d={`M ${cx},${cy} Q ${cx + cw * 0.25},${cy + 14} ${cx + cw * 0.5},${cy + 8} Q ${cx + cw * 0.75},${cy + 14} ${cx + cw},${cy}`}
+                  fill="none"
+                  stroke={darkGold}
+                  strokeWidth="1.2"
+                  opacity="0.6"
+                />
+              </>
+            ) : (
+              <>
+                <path d={leftPiecePath} fill="url(#fabricPattern)" stroke={darkGold} strokeWidth="1.5" />
+                <path d={rightPiecePath} fill="url(#fabricPattern)" stroke={darkGold} strokeWidth="1.5" />
+                {Array.from({ length: 6 }).map((_, i) => {
+                  const pw = (cw - 24) / 2;
+                  const t = (i + 1) / 7;
+                  const fx = cx + pw * t;
+                  return (
+                    <path
+                      key={`l-fold-${i}`}
+                      d={`M ${fx},${cy} Q ${fx + 8},${cy + ch * 0.4} ${fx - 4},${cy + ch + 4}`}
+                      fill="none"
+                      stroke="#B8A88A"
+                      strokeWidth="1"
+                      opacity="0.45"
+                    />
+                  );
+                })}
+                {Array.from({ length: 6 }).map((_, i) => {
+                  const pw = (cw - 24) / 2;
+                  const rx = cx + pw + 24;
+                  const t = (i + 1) / 7;
+                  const fx = rx + pw * t;
+                  return (
+                    <path
+                      key={`r-fold-${i}`}
+                      d={`M ${fx},${cy} Q ${fx - 8},${cy + ch * 0.4} ${fx + 4},${cy + ch + 4}`}
+                      fill="none"
+                      stroke="#B8A88A"
+                      strokeWidth="1"
+                      opacity="0.45"
+                    />
+                  );
+                })}
+              </>
+            )}
+          </g>
+
+          {/* ====== خط القص ====== */}
+          {shape === "cut_middle" && (step === 3 || isReviewStep) && (
+            <g>
+              <line
+                x1={cx + cw / 2}
+                y1={cy - 10}
+                x2={cx + cw / 2}
+                y2={cy + ch + 16}
+                stroke="#DC2626"
+                strokeWidth="2"
+                strokeDasharray="10,6"
+              />
+              <rect
+                x={cx + cw / 2 - 42}
+                y={cy + ch / 2 - 14}
+                width={84}
+                height={28}
+                fill="#DC2626"
+                rx={6}
+                opacity="0.9"
+              />
+              <text
+                x={cx + cw / 2}
+                y={cy + ch / 2 + 5}
+                fill="#FFFFFF"
+                fontSize="13"
+                fontWeight="bold"
+                textAnchor="middle"
+              >
+                قص من الوسط
+              </text>
+            </g>
           )}
-          <text x={sw / 2} y="-5" fill="#5D4037" fontSize="12" fontWeight="bold" textAnchor="middle">العرض: {width}م</text>
+
+          {/* ====== السدادر ====== */}
+          {(isSedadarStep || isReviewStep) &&
+            tassels.map((t) => (
+              <g key={`tassel-${t.n}`}>
+                <line x1={t.x} y1={t.y} x2={t.x} y2={t.y + t.len} stroke={gold} strokeWidth="1.5" />
+                <circle cx={t.x} cy={t.y + t.len + 3} r={4} fill={gold} />
+                <circle cx={t.x} cy={t.y - 10} r={10} fill="#FFFFFF" stroke={gold} strokeWidth="1.5" />
+                <text x={t.x} y={t.y - 6} fill={darkGold} fontSize="10" fontWeight="bold" textAnchor="middle">
+                  {t.n}
+                </text>
+                {isReviewStep && (
+                  <text
+                    x={t.x}
+                    y={t.y + t.len + 20}
+                    fill="#5D4037"
+                    fontSize="10"
+                    textAnchor="middle"
+                    fontWeight="600"
+                  >
+                    {t.len} سم
+                  </text>
+                )}
+              </g>
+            ))}
+
+          {/* ====== الفورمجة ====== */}
+          {(isFormageStep || isReviewStep) && (
+            <g>
+              {formagePoints.map((p, i) => (
+                <g key={`form-${i}`}>
+                  <circle cx={p.x} cy={p.y} r={5} fill={gold} opacity="0.9" />
+                  <circle cx={p.x} cy={p.y} r={9} fill="none" stroke={gold} strokeWidth="1.5" opacity="0.6" />
+                  {isFormageStep && (
+                    <text
+                      x={p.x}
+                      y={p.y - 14}
+                      fill={darkGold}
+                      fontSize="11"
+                      fontWeight="bold"
+                      textAnchor="middle"
+                    >
+                      فورمجة {i + 1}
+                    </text>
+                  )}
+                </g>
+              ))}
+              {isFormageStep && (
+                <path
+                  d={`M ${cx + cw * 0.2},${cy + ch * 0.15} Q ${cx + cw * 0.5},${cy + ch * 0.35} ${cx + cw * 0.8},${cy + ch * 0.15}`}
+                  fill="none"
+                  stroke={gold}
+                  strokeWidth="2"
+                  strokeDasharray="6,4"
+                  opacity="0.8"
+                />
+              )}
+            </g>
+          )}
+
+          {/* ====== قياس الارتفاع ====== */}
+          {(isDimensionStep || isReviewStep) && (
+            <g>
+              <line
+                x1={cx - 50}
+                y1={cy - 8}
+                x2={cx - 50}
+                y2={cy + ch + 8}
+                stroke={gold}
+                strokeWidth="2"
+                markerStart="url(#arrowStart)"
+                markerEnd="url(#arrowEnd)"
+              />
+              <line x1={cx - 60} y1={cy} x2={cx - 40} y2={cy} stroke={gold} strokeWidth="1" />
+              <line x1={cx - 60} y1={cy + ch} x2={cx - 40} y2={cy + ch} stroke={gold} strokeWidth="1" />
+              <rect
+                x={cx - 95}
+                y={cy + ch / 2 - 16}
+                width={70}
+                height={32}
+                fill="#FFFFFF"
+                stroke={gold}
+                strokeWidth="1.5"
+                rx={6}
+                filter="url(#softShadow)"
+              />
+              <text
+                x={cx - 60}
+                y={cy + ch / 2 + 5}
+                fill={darkGold}
+                fontSize="14"
+                fontWeight="bold"
+                textAnchor="middle"
+              >
+                {height.toFixed(2)} م
+              </text>
+            </g>
+          )}
+
+          {/* ====== قياس العرض ====== */}
+          {(isDimensionStep || isReviewStep) && (
+            <g>
+              <line
+                x1={cx - 8}
+                y1={rodY - 45}
+                x2={cx + cw + 8}
+                y2={rodY - 45}
+                stroke={gold}
+                strokeWidth="2"
+                markerStart="url(#arrowStart)"
+                markerEnd="url(#arrowEnd)"
+              />
+              <line x1={cx} y1={rodY - 55} x2={cx} y2={rodY - 35} stroke={gold} strokeWidth="1" />
+              <line x1={cx + cw} y1={rodY - 55} x2={cx + cw} y2={rodY - 35} stroke={gold} strokeWidth="1" />
+              <rect
+                x={cx + cw / 2 - 40}
+                y={rodY - 72}
+                width={80}
+                height={32}
+                fill="#FFFFFF"
+                stroke={gold}
+                strokeWidth="1.5"
+                rx={6}
+                filter="url(#softShadow)"
+              />
+              <text
+                x={cx + cw / 2}
+                y={rodY - 50}
+                fill={darkGold}
+                fontSize="14"
+                fontWeight="bold"
+                textAnchor="middle"
+              >
+                {width.toFixed(2)} م
+              </text>
+            </g>
+          )}
+
+          {/* ====== قياس عرض القطع ====== */}
+          {shape === "cut_middle" && (step === 3 || isReviewStep) && (
+            <g>
+              <line
+                x1={cx}
+                y1={cy + ch + 35}
+                x2={cx + (cw - 24) / 2}
+                y2={cy + ch + 35}
+                stroke="#DC2626"
+                strokeWidth="1.5"
+                markerStart="url(#arrowStart)"
+                markerEnd="url(#arrowEnd)"
+              />
+              <rect
+                x={cx + (cw - 24) / 4 - 35}
+                y={cy + ch + 22}
+                width={70}
+                height={24}
+                fill="#FFFFFF"
+                stroke="#DC2626"
+                strokeWidth="1"
+                rx={4}
+              />
+              <text
+                x={cx + (cw - 24) / 4}
+                y={cy + ch + 39}
+                fill="#DC2626"
+                fontSize="11"
+                fontWeight="bold"
+                textAnchor="middle"
+              >
+                {(width / 2).toFixed(2)} م
+              </text>
+            </g>
+          )}
+
+          {/* ====== شارة الخطوة 1 ====== */}
+          {step === 1 && selectedProductName && (
+            <g>
+              <rect
+                x={cx + cw / 2 - 70}
+                y={cy + ch + 28}
+                width={140}
+                height={34}
+                fill="#FFFFFF"
+                stroke={gold}
+                strokeWidth="1.5"
+                rx={8}
+                filter="url(#softShadow)"
+              />
+              <text
+                x={cx + cw / 2}
+                y={cy + ch + 50}
+                fill={darkGold}
+                fontSize="13"
+                fontWeight="bold"
+                textAnchor="middle"
+              >
+                {selectedProductName}
+              </text>
+            </g>
+          )}
         </svg>
       </div>
     </div>
@@ -792,7 +1294,14 @@ export default function KhamiyaPage() {
 
           {/* RIGHT: Preview + Cost */}
           <div className="space-y-6 lg:sticky lg:top-24 lg:self-start">
-            <KhamiyaSVG width={width} height={height} shape={shape} hasBackground={hasBackground} />
+            <KhamiyaSVG
+  width={width}
+  height={height}
+  shape={shape}
+  hasBackground={hasBackground}
+  step={step}
+  selectedProductName={selectedKhamiya?.name}
+/>
             <CostPanel
               fabricCost={fabricCost} sewingCost={sewingCost} aqiqCost={aqiqCost} bgCost={bgCost}
               customAdditionsCost={customAdditionsCost} catalogAdditionsCost={catalogAdditionsCost} grandTotal={grandTotal}

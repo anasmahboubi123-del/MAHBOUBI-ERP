@@ -3,17 +3,16 @@
 import { useEffect, useState, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import {
-  Printer, Eye, FileText, Settings, Check, ChevronRight,
-  ArrowRight, Tag, Info, FileCheck, PenTool, QrCode, Stamp,
-  Globe, Phone, Download,
+  Eye, FileText, Settings, Check, ChevronRight,
+  ArrowRight, Globe,
 } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import PrintModal from "@/features/order-center/components/PrintModal";
-import type { OrderItem, DocumentType, PrintOptions } from "@/features/order-center/types";
+import type { OrderItem, DocumentType, DocumentLanguage, PrintOptions } from "@/features/order-center/types";
+import { docTitle } from "@/features/order-center/i18n/documents";
 
 const C = { green: "#1B5E38", gold: "#C9A84C", dark: "#0D1F17", cream: "#F5F0E8" };
 
-// ✅ FIX: Wrap in Suspense boundary
 export default function OrderCustomizePage() {
   return (
     <Suspense fallback={
@@ -33,6 +32,7 @@ function OrderCustomizeContent() {
   const typeParam = searchParams.get("type") as DocumentType;
 
   const [order, setOrder] = useState<any>(null);
+  // ← FIX: explicitly typed as OrderItem[]
   const [items, setItems] = useState<OrderItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [showPreview, setShowPreview] = useState(false);
@@ -49,6 +49,11 @@ function OrderCustomizeContent() {
     includeStamp: false,
   });
 
+  // ← NEW: agreed delivery date
+  const [agreedDeliveryDate, setAgreedDeliveryDate] = useState("");
+  // ← NEW: seller notes
+  const [sellerNotes, setSellerNotes] = useState("");
+
   useEffect(() => {
     if (!orderId) return;
     loadData();
@@ -62,6 +67,7 @@ function OrderCustomizeContent() {
     ]);
 
     setOrder(orderData);
+    // ← FIX: properly typed conversion
     const convertedItems: OrderItem[] = (itemsData || []).map((it: any) => ({
       id: it.id,
       orderItemId: it.id,
@@ -83,12 +89,16 @@ function OrderCustomizeContent() {
     setPrintOptions((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
+  const setLanguage = (lang: DocumentLanguage) => {
+    setPrintOptions((prev) => ({ ...prev, language: lang }));
+  };
+
   const documentTypeLabel =
     printOptions.documentType === "devis"
-      ? "عرض سعر (Devis)"
+      ? docTitle("devis", printOptions.language)
       : printOptions.documentType === "bon_de_commande"
-      ? "بون دي كوموند (BC)"
-      : "فاتورة";
+      ? docTitle("bon_de_commande", printOptions.language)
+      : docTitle("facture", printOptions.language);
 
   if (loading) {
     return (
@@ -108,7 +118,7 @@ function OrderCustomizeContent() {
 
   return (
     <div className="min-h-screen bg-gray-50 p-4" dir="rtl">
-      <div className="max-w-4xl mx-auto space-y-6">
+      <div className="max-w-5xl mx-auto space-y-6">
         {/* Header */}
         <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
           <div className="flex items-center gap-2 text-sm text-gray-500 mb-2">
@@ -144,7 +154,7 @@ function OrderCustomizeContent() {
                         : "border-gray-200 hover:border-gray-300"
                     }`}
                   >
-                    {t === "devis" ? "عرض سعر" : "بون دي كوموند"}
+                    {t === "devis" ? "عرض سعر (Devis)" : "بون دي كوموند (BC)"}
                   </button>
                 ))}
               </div>
@@ -195,23 +205,55 @@ function OrderCustomizeContent() {
             <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
               <h3 className="font-bold mb-3 flex items-center gap-2">
                 <Globe className="w-4 h-4" style={{ color: C.gold }} />
-                اللغة
+                لغة المستند
               </h3>
               <div className="grid grid-cols-3 gap-2">
-                {(["ar", "fr", "bilingual"] as const).map((lang) => (
+                {(["ar", "fr", "es", "it", "bilingual"] as DocumentLanguage[]).map((lang) => (
                   <button
                     key={lang}
-                    onClick={() => setPrintOptions((p) => ({ ...p, language: lang }))}
+                    onClick={() => setLanguage(lang)}
                     className={`p-2 rounded-lg border-2 text-sm font-bold transition ${
                       printOptions.language === lang
                         ? "border-green-600 bg-green-50 text-green-800"
-                        : "border-gray-200"
+                        : "border-gray-200 hover:border-gray-300"
                     }`}
                   >
-                    {lang === "ar" ? "عربي" : lang === "fr" ? "Français" : "مزدوج"}
+                    {lang === "ar" ? "عربي" : lang === "fr" ? "Français" : lang === "es" ? "Español" : lang === "it" ? "Italiano" : "مزدوج"}
                   </button>
                 ))}
               </div>
+            </div>
+
+            {/* ─── Agreed Delivery Date ─── */}
+            <div className="bg-amber-50 rounded-xl p-4 border border-amber-200">
+              <h3 className="font-bold mb-3 flex items-center gap-2 text-amber-800">
+                <span>📅</span>
+                موعد التسليم المتفق عليه
+              </h3>
+              <input
+                type="text"
+                value={agreedDeliveryDate}
+                onChange={(e) => setAgreedDeliveryDate(e.target.value)}
+                placeholder="مثال: 20/08/2026 أو 5-7 أسابيع"
+                className="w-full p-3 rounded-lg border-2 border-amber-200 text-right font-bold text-amber-900 bg-white focus:border-amber-500 focus:outline-none transition-colors text-sm"
+              />
+              <p className="text-xs text-amber-600 mt-1">سيظهر في بون دي كوموند ويُرسل للزبون</p>
+            </div>
+
+            {/* ─── Seller Notes ─── */}
+            <div className="bg-blue-50 rounded-xl p-4 border border-blue-200">
+              <h3 className="font-bold mb-3 flex items-center gap-2 text-blue-800">
+                <span>📝</span>
+                ملاحظات خاصة
+              </h3>
+              <textarea
+                value={sellerNotes}
+                onChange={(e) => setSellerNotes(e.target.value)}
+                placeholder="مثال: القماش غير متوفر حالياً، سنتصل بك..."
+                rows={3}
+                className="w-full p-3 rounded-lg border-2 border-blue-200 text-right font-bold text-blue-900 bg-white focus:border-blue-500 focus:outline-none transition-colors text-sm resize-none"
+              />
+              <p className="text-xs text-blue-600 mt-1">تظهر في أسفل بيانات الزبون في PDF</p>
             </div>
 
             {/* Preview Button */}
@@ -221,7 +263,7 @@ function OrderCustomizeContent() {
               style={{ background: C.green }}
             >
               <Eye className="w-5 h-5" />
-              معاينة قبل الطباعة
+              معاينة وطباعة
             </button>
 
             <button
@@ -264,7 +306,6 @@ function OrderCustomizeContent() {
                 )}
               </div>
 
-              {/* Product List */}
               <div className="mt-6">
                 <h4 className="font-bold mb-3 text-sm text-gray-500">المنتجات:</h4>
                 <div className="space-y-2">
@@ -294,7 +335,7 @@ function OrderCustomizeContent() {
         </div>
       </div>
 
-      {/* Print Modal Preview */}
+      {/* Print Modal */}
       {showPreview && (
         <PrintModal
           orderItems={items}
@@ -309,6 +350,10 @@ function OrderCustomizeContent() {
           documentType={printOptions.documentType}
           printOptions={printOptions}
           onClose={() => setShowPreview(false)}
+          agreedDeliveryDate={agreedDeliveryDate}
+          onAgreedDeliveryDateChange={setAgreedDeliveryDate}
+          sellerNotes={sellerNotes}
+          onSellerNotesChange={setSellerNotes}
         />
       )}
     </div>

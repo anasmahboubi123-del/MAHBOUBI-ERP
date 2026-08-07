@@ -1,6 +1,6 @@
 // src/lib/supabase-tailors-v2.ts
 // Full Supabase integration for Admin Tailors Management
-// Supports: Text, Voice, Image, Camera messages + Realtime across devices
+// FIXED to match REAL database schema (71 tables)
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -9,26 +9,29 @@ const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
 export const supabase = createClient(supabaseUrl, supabaseKey);
 
-// ==================== TYPES ====================
+// ==================== TYPES (aligned with REAL DB schema) ====================
 
 export interface Tailor {
   id: string;
   full_name: string;
-  phone: string;
-  pin_code: string;
+  phone: string | null;
+  pin_code: string | null;
   wage_percentage: number;
+  active: boolean;
   is_active: boolean;
-  avatar_url?: string;
-  created_at?: string;
+  avatar_url: string | null;
+  created_at: string;
 }
 
 export interface WorkItem {
   id: string;
   order_id: string;
-  label: string;
-  kind: string;
-  qty: number;
+  label: string | null;
+  kind: string | null;              // PRIMARY type field in DB
+  product_type: string | null;     // Secondary type field
+  qty: number | null;
   sewing_cost: number;
+  tailor_id: string | null;
   created_at: string;
   order_code?: string;
   customer_name?: string;
@@ -36,17 +39,15 @@ export interface WorkItem {
 
 export interface WeeklyWage {
   id: string;
-  tailor_id: string;
-  week_start: string;
-  week_end: string;
-  total_sewing_cost: number;
-  wage_amount: number;
-  wage_percentage: number;
-  status: 'pending' | 'paid';
-  paid_at?: string;
-  paid_by?: string;
-  notes?: string;
-  created_at?: string;
+  tailor_id: string | null;
+  week_start: string;   // date in DB
+  week_end: string;       // date in DB
+  total_sewing_value: number | null;  // FIXED: was "total_sewing_cost"
+  wage_amount: number | null;
+  wage_percentage: number | null;
+  status: string | null;
+  paid_at: string | null;
+  created_at: string;
 }
 
 export interface WeeklySummary {
@@ -60,7 +61,7 @@ export interface WeeklySummary {
   total_cushions: number;
   total_decor_cushions: number;
   total_formas: number;
-  total_sewing_cost: number;
+  total_sewing_value: number;  // FIXED: was "total_sewing_cost"
   wage_amount: number;
   wage_percentage: number;
   status: 'pending' | 'paid';
@@ -70,17 +71,19 @@ export type MessageType = 'text' | 'voice' | 'image' | 'camera';
 
 export interface ChatMessage {
   id: string;
-  order_id?: string;
-  sender_role: 'admin' | 'tailor' | 'seller';
-  sender_id: string;
-  sender_name: string;
-  recipient_id?: string;
-  body: string;
-  message_type: MessageType;
-  media_url?: string;
-  media_duration?: number;
-  media_size?: number;
-  is_read: boolean;
+  order_id: string | null;
+  sender_role: string | null;
+  sender_id: string;           // NOT NULL in DB
+  sender_name: string;         // NOT NULL in DB
+  recipient_id: string | null;
+  body: string | null;
+  message_type: string;        // NOT NULL in DB
+  media_url: string | null;
+  media_duration: number | null;
+  media_size: number | null;
+  attachment_url: string | null;  // Extra field in DB
+  audio_url: string | null;     // Extra field in DB
+  is_read: boolean;            // NOT NULL in DB
   created_at: string;
 }
 
@@ -137,8 +140,10 @@ export async function getTailorWorkItems(
       order_id,
       label,
       kind,
+      product_type,
       qty,
       sewing_cost,
+      tailor_id,
       created_at,
       orders:order_id (customer_name, id)
     `)
@@ -184,7 +189,7 @@ export async function calculateWeeklySummary(
 
   const items = await getTailorWorkItems(tailorId, weekStart, weekEnd);
 
-  let totalSewingCost = 0;
+  let totalSewingValue = 0;  // FIXED: was totalSewingCost
   let totalSeddars = 0;
   let totalCushions = 0;
   let totalDecorCushions = 0;
@@ -193,15 +198,26 @@ export async function calculateWeeklySummary(
   const uniqueDays = new Set<string>();
 
   for (const item of items) {
-    totalSewingCost += item.sewing_cost * item.qty;
+    const qty = item.qty || 1;
+    totalSewingValue += item.sewing_cost * qty;
     uniqueOrders.add(item.order_id);
     uniqueDays.add(item.created_at.split('T')[0]);
 
-    if (item.kind.includes('seddari') || item.kind.includes('سداري')) totalSeddars += item.qty;
-    else if (item.kind.includes('cushion') || item.kind.includes('مخدة')) {
-      if (item.kind.includes('decor') || item.kind.includes('ديكور')) totalDecorCushions += item.qty;
-      else totalCushions += item.qty;
-    } else if (item.kind.includes('forma') || item.kind.includes('فورمة')) totalFormas += item.qty;
+    // Use BOTH kind and product_type for classification
+    const typeStr = (item.kind || item.product_type || '').toLowerCase();
+    const labelStr = (item.label || '').toLowerCase();
+
+    if (typeStr.includes('seddari') || labelStr.includes('سداري')) {
+      totalSeddars += qty;
+    } else if (typeStr.includes('cushion') || labelStr.includes('مخدة') || labelStr.includes('مخد')) {
+      if (typeStr.includes('decor') || labelStr.includes('ديكور')) {
+        totalDecorCushions += qty;
+      } else {
+        totalCushions += qty;
+      }
+    } else if (typeStr.includes('forma') || labelStr.includes('فورمة')) {
+      totalFormas += qty;
+    }
   }
 
   const percentage = tailor?.wage_percentage || 40;
@@ -216,8 +232,8 @@ export async function calculateWeeklySummary(
     total_cushions: totalCushions,
     total_decor_cushions: totalDecorCushions,
     total_formas: totalFormas,
-    total_sewing_cost: totalSewingCost,
-    wage_amount: totalSewingCost * (percentage / 100),
+    total_sewing_value: totalSewingValue,  // FIXED
+    wage_amount: totalSewingValue * (percentage / 100),
     wage_percentage: percentage,
     status: 'pending',
   };
@@ -230,11 +246,10 @@ export async function saveWeeklyWage(summary: WeeklySummary): Promise<WeeklyWage
       tailor_id: summary.tailor_id,
       week_start: summary.week_start,
       week_end: summary.week_end,
-      total_sewing_cost: summary.total_sewing_cost,
+      total_sewing_value: summary.total_sewing_value,  // FIXED
       wage_amount: summary.wage_amount,
       wage_percentage: summary.wage_percentage,
       status: 'pending',
-      notes: `طلبيات: ${summary.total_orders} | سدادر: ${summary.total_seddars} | مخاد: ${summary.total_cushions} | ديكور: ${summary.total_decor_cushions} | فورمات: ${summary.total_formas} | أيام: ${summary.days_worked}`,
     })
     .select()
     .single();
@@ -242,10 +257,11 @@ export async function saveWeeklyWage(summary: WeeklySummary): Promise<WeeklyWage
   return data;
 }
 
-export async function markWageAsPaid(wageId: string, adminName: string) {
+export async function markWageAsPaid(wageId: string, _adminName: string) {
+  // DB has no "paid_by" column — just mark as paid
   const { error } = await supabase
     .from('weekly_wages')
-    .update({ status: 'paid', paid_at: new Date().toISOString(), paid_by: adminName })
+    .update({ status: 'paid', paid_at: new Date().toISOString() })
     .eq('id', wageId);
   if (error) throw error;
 }
@@ -381,7 +397,7 @@ export function formatTime(dateStr: string): string {
 }
 
 export function getDayName(dateStr: string): string {
-  const days = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
+  const days = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأرباء', 'الخميس', 'الجمعة', 'السبت'];
   return days[new Date(dateStr).getDay()];
 }
 

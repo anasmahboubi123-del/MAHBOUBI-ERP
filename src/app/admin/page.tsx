@@ -22,14 +22,16 @@ type DbOrder = Database["public"]["Tables"]["orders"]["Row"];
 type DbOrderPart = Database["public"]["Tables"]["order_parts"]["Row"];
 type DbTailor = Database["public"]["Tables"]["tailors"]["Row"];
 type DbTimeline = Database["public"]["Tables"]["order_timeline"]["Row"];
-
+type DbWoodOrder = any;
 type FoamOrderWithProduct = FoamOrder & {
   foam_products?: { name: string } | null;
   suppliers?: { name: string } | null;
 };
 
+type OrderPartWithStatus = DbOrderPart & { status?: string | null };
+
 interface OrderWithParts extends DbOrder {
-  parts: DbOrderPart[];
+  parts: OrderPartWithStatus[];
 }
 
 type Period = "today" | "week" | "month";
@@ -101,6 +103,7 @@ export default function AdminDashboardPage() {
   const [timeline, setTimeline] = useState<DbTimeline[]>([]);
   const [target, setTarget] = useState(15000);
   const [foamOrders, setFoamOrders] = useState<FoamOrderWithProduct[]>([]);
+  const [woodOrders, setWoodOrders] = useState<DbWoodOrder[]>([]);
 
   const todayStr = getTodayStr();
 
@@ -110,13 +113,14 @@ export default function AdminDashboardPage() {
     try {
       const since = getPeriodStart(period);
 
-      const [{ data: ordersData }, { data: partsData }, { data: tailorsData }, { data: timelineData }, { data: targetData }, { data: foamData }] = await Promise.all([
+      const [{ data: ordersData }, { data: partsData }, { data: tailorsData }, { data: timelineData }, { data: targetData }, { data: foamData }, { data: woodData }] = await Promise.all([
         supabase.from("orders").select("*").gte("created_at", since).order("created_at", { ascending: false }),
         supabase.from("order_parts").select("*").order("created_at", { ascending: false }),
         supabase.from("tailors").select("*").eq("is_active", true).order("full_name", { ascending: true }),
         supabase.from("order_timeline").select("*").order("created_at", { ascending: false }).limit(10),
         supabase.from("settings").select("value").eq("key", "monthly_target").single(),
         supabase.from("foam_orders").select("*, foam_products(name), suppliers(name)").gte("created_at", since).order("created_at", { ascending: false }).limit(100),
+        supabase.from("wood_orders").select("*").gte("created_at", since).order("created_at", { ascending: false }).limit(100),
       ]);
 
       const ordersWithParts: OrderWithParts[] = (ordersData || []).map((o) => ({
@@ -128,6 +132,7 @@ export default function AdminDashboardPage() {
       setTailors(tailorsData || []);
       setTimeline(timelineData || []);
       setFoamOrders(foamData || []);
+      setWoodOrders(woodData || []);
       if (targetData?.value) setTarget(Number(targetData.value) || 15000);
     } catch (err) {
       console.error("فشل تحميل لوحة التحكم:", err);
@@ -143,13 +148,13 @@ export default function AdminDashboardPage() {
   /* ─── Derived Data ─── */
 
   // KPIs
-  const totalSales = useMemo(() => orders.reduce((s, o) => s + (o.total || 0), 0), [orders]);
+ const totalSales = orders.reduce((s, o) => s + ((o as any).total_amount || (o as any).total || 0), 0);
   const totalOrders = orders.length;
   const uniqueCustomers = useMemo(() => new Set(orders.map((o) => o.customer_name).filter(Boolean)).size, [orders]);
   const targetPercent = Math.min(Math.round((totalSales / target) * 100), 100);
 
   // Foam stats
-  const foamTotalSales = useMemo(() => foamOrders.reduce((s, o) => s + (o.final_price || 0), 0), [foamOrders]);
+  const foamTotalSales = useMemo(() => foamOrders.reduce((s, o) => s + (o.final_total || 0), 0), [foamOrders]);
   const foamPending = useMemo(() => foamOrders.filter(o => o.status === 'pending').length, [foamOrders]);
   const foamInProduction = useMemo(() => foamOrders.filter(o => o.status === 'in_production').length, [foamOrders]);
   const foamReady = useMemo(() => foamOrders.filter(o => o.status === 'ready').length, [foamOrders]);
@@ -159,6 +164,12 @@ export default function AdminDashboardPage() {
       return o.status !== 'delivered' && o.status !== 'ready' && days <= 3 && days >= 0;
     });
   }, [foamOrders]);
+
+  // Wood stats
+  const woodTotalSales = useMemo(() => woodOrders.reduce((s, o) => s + (o.final_total || 0), 0), [woodOrders]);
+  const woodPending = useMemo(() => woodOrders.filter(o => o.status === 'new' || o.status === 'pending').length, [woodOrders]);
+  const woodInProgress = useMemo(() => woodOrders.filter(o => o.status === 'in_progress').length, [woodOrders]);
+  const woodReady = useMemo(() => woodOrders.filter(o => o.status === 'ready').length, [woodOrders]);
 
   // Tapis orders count
   const tapisOrdersCount = useMemo(() => {
@@ -213,7 +224,7 @@ export default function AdminDashboardPage() {
     orders.forEach((o) => {
       const name = o.customer_name || "—";
       if (!map[name]) map[name] = { name, total: 0, count: 0 };
-      map[name].total += o.total || 0;
+      map[name].total += (o as any).total_amount || (o as any).total || 0 || 0;
       map[name].count++;
     });
     return Object.values(map).sort((a, b) => b.total - a.total)[0] || null;
@@ -224,11 +235,11 @@ export default function AdminDashboardPage() {
     const map: Record<string, { name: string; count: number; revenue: number }> = {};
     orders.forEach((o) => {
       o.parts.forEach((p) => {
-        const name = p.label || p.part_type;
+        const name = p.label || p.part_type || "—";
         if (!map[name]) map[name] = { name, count: 0, revenue: 0 };
         map[name].count++;
         const orderPartsCount = o.parts.length || 1;
-        map[name].revenue += (o.total || 0) / orderPartsCount;
+        map[name].revenue += ((o as any).total_amount || (o as any).total || 0) / orderPartsCount;
       });
     });
     return Object.values(map).sort((a, b) => b.revenue - a.revenue)[0] || null;
@@ -264,7 +275,7 @@ export default function AdminDashboardPage() {
       const dayLabel = d.getDate().toString();
       const sales = orders
         .filter((o) => o.created_at && o.created_at.startsWith(dayStr))
-        .reduce((s, o) => s + (o.total || 0), 0);
+        .reduce((s, o) => s + ((o as any).total_amount || (o as any).total || 0), 0);
       days.push({ day: dayLabel, sales, target: Math.round(target / 30) });
     }
     return days;
@@ -371,10 +382,12 @@ export default function AdminDashboardPage() {
 
       <main className="max-w-7xl mx-auto px-4 py-6 space-y-6">
         {/* KPIs */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-          <KPICard title="إجمالي المبيعات" value={formatCurrency(totalSales)} sub="عن هذا الشهر" trend="▲ 15%" trendUp={true} icon="💰" bg="bg-[#E8F5E9]" textColor="text-[#1B5E3B]" />
-          <KPICard title="عدد الطلبات" value={totalOrders} sub="طلب جديد" trend="▲ 3" trendUp={true} icon="📦" bg="bg-[#E3F2FD]" textColor="text-blue-700" />
-          <KPICard title="الزبائن النشطون" value={uniqueCustomers} sub="زبون هذا الشهر" trend="▲ 2" trendUp={true} icon="👥" bg="bg-[#FFF3E0]" textColor="text-orange-700" />
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 gap-4">
+          <KPICard title="إجمالي المبيعات" value={formatCurrency(totalSales)} sub="الصالون" trend="▲" trendUp={true} icon="💰" bg="bg-[#E8F5E9]" textColor="text-[#1B5E3B]" />
+          <KPICard title="مبيعات البونج" value={formatCurrency(foamTotalSales)} sub="البونج" trend="▲" trendUp={true} icon="🧽" bg="bg-[#FFF3E0]" textColor="text-orange-700" />
+          <KPICard title="مبيعات العود" value={formatCurrency(woodTotalSales)} sub="العود" trend="▲" trendUp={true} icon="🪵" bg="bg-[#F3E5F5]" textColor="text-purple-700" />
+          <KPICard title="عدد الطلبات" value={totalOrders} sub="طلب جديد" trend="▲" trendUp={true} icon="📦" bg="bg-[#E3F2FD]" textColor="text-blue-700" />
+          <KPICard title="الزبائن النشطون" value={uniqueCustomers} sub="زبون هذا الشهر" trend="▲" trendUp={true} icon="👥" bg="bg-[#FFF3E0]" textColor="text-orange-700" />
           <div className="bg-[#F3E5F5] rounded-2xl p-5 shadow-sm border border-white/50">
             <div className="flex items-center justify-between mb-3">
               <span className="text-2xl">🎯</span>
@@ -386,11 +399,11 @@ export default function AdminDashboardPage() {
               <div className="bg-[#C9A84C] h-2 rounded-full transition-all" style={{ width: `${targetPercent}%` }} />
             </div>
           </div>
-          <KPICard title="مبيعات البونج" value={formatCurrency(foamTotalSales)} sub="عن هذا الشهر" trend="▲ جديد" trendUp={true} icon="🧽" bg="bg-[#FFF3E0]" textColor="text-orange-700" />
         </div>
 
-        {/* Tapis Orders Widget */}
+        {/* Status Widgets */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* Tapis */}
           <div className={`rounded-2xl p-5 shadow-sm border border-white/50 ${tapisUrgentCount > 0 ? "bg-red-50" : "bg-blue-50"}`}>
             <div className="flex items-center justify-between mb-3">
               <span className="text-2xl">🧶</span>
@@ -411,6 +424,7 @@ export default function AdminDashboardPage() {
             </Link>
           </div>
 
+          {/* Today's Deliveries */}
           <div className="bg-white rounded-2xl p-5 shadow-sm border border-[#E8E4DC]">
             <div className="flex items-center justify-between mb-3">
               <span className="text-2xl">📅</span>
@@ -421,6 +435,7 @@ export default function AdminDashboardPage() {
             <p className="text-xs text-gray-400 mt-1">{new Date().toLocaleDateString("ar-MA", { weekday: "long", day: "numeric", month: "long" })}</p>
           </div>
 
+          {/* Tailors */}
           <div className="bg-white rounded-2xl p-5 shadow-sm border border-[#E8E4DC]">
             <div className="flex items-center justify-between mb-3">
               <span className="text-2xl">👔</span>
@@ -435,7 +450,7 @@ export default function AdminDashboardPage() {
             </p>
           </div>
 
-          {/* Foam Orders Widget */}
+          {/* Foam Orders */}
           <div className={`rounded-2xl p-5 shadow-sm border border-white/50 ${foamUrgent.length > 0 ? "bg-orange-50" : "bg-green-50"}`}>
             <div className="flex items-center justify-between mb-3">
               <span className="text-2xl">🧽</span>
@@ -460,6 +475,34 @@ export default function AdminDashboardPage() {
             </Link>
           </div>
         </div>
+
+        {/* Wood Orders Widget */}
+        {(woodPending > 0 || woodInProgress > 0 || woodReady > 0) && (
+          <div className="bg-white rounded-2xl p-5 shadow-sm border border-[#E8E4DC]">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-lg font-bold text-[#1B5E3B] flex items-center gap-2">
+                <span>🪵</span> طلبيات العود
+              </h3>
+              <Link href="/admin/wood-orders" className="text-xs font-bold text-[#1B5E3B] hover:text-[#C9A84C] transition">
+                عرض الكل ←
+              </Link>
+            </div>
+            <div className="grid grid-cols-3 gap-4 text-center">
+              <div className="bg-[#F5F0E8] rounded-xl p-3">
+                <p className="text-2xl font-bold text-[#1B5E3B]">{woodPending}</p>
+                <p className="text-xs text-gray-500">جديدة / معلقة</p>
+              </div>
+              <div className="bg-[#FFF3E0] rounded-xl p-3">
+                <p className="text-2xl font-bold text-[#C9A84C]">{woodInProgress}</p>
+                <p className="text-xs text-gray-500">قيد التنفيذ</p>
+              </div>
+              <div className="bg-[#E8F5E9] rounded-xl p-3">
+                <p className="text-2xl font-bold text-green-600">{woodReady}</p>
+                <p className="text-xs text-gray-500">جاهزة</p>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Foam Reminders */}
         {foamUrgent.length > 0 && (
@@ -501,9 +544,9 @@ export default function AdminDashboardPage() {
                   <XAxis dataKey="day" tick={{ fontSize: 12, fill: "#94A3B8" }} axisLine={false} tickLine={false} />
                   <YAxis tick={{ fontSize: 12, fill: "#94A3B8" }} axisLine={false} tickLine={false} />
                   <Tooltip 
-  contentStyle={{ borderRadius: "12px", border: "none", boxShadow: "0 4px 20px rgba(0,0,0,0.1)" }} 
-  formatter={(value) => [`DH ${Number(value ?? 0).toLocaleString()}`, "المبيعات"]} 
-/>
+                    contentStyle={{ borderRadius: "12px", border: "none", boxShadow: "0 4px 20px rgba(0,0,0,0.1)" }} 
+                    formatter={(value) => [`DH ${Number(value ?? 0).toLocaleString()}`, "المبيعات"]} 
+                  />
                   <Area type="monotone" dataKey="sales" stroke="#1B5E3B" strokeWidth={2} fillOpacity={1} fill="url(#colorSales)" />
                   <Area type="monotone" dataKey="target" stroke="#C9A84C" strokeWidth={2} strokeDasharray="5 5" fill="none" />
                 </AreaChart>

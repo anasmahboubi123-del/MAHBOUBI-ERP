@@ -1,49 +1,148 @@
-'use client';
+"use client";
 
 import React, { useRef } from 'react';
-import { Printer, Download } from 'lucide-react';
+import { Printer } from 'lucide-react';
 import { OrderDraft } from '@/lib/types';
-import { seddariFabricCm, DEFAULTS, fmtDh, fmtM } from '@/lib/calculations';
-import { CustomAddition } from './hooks/StageSummary';
 import { useInvoiceTemplate } from './hooks/useInvoiceTemplate';
 
 interface InvoiceTemplateProps {
   draft: OrderDraft;
-  customItems?: CustomAddition[];
   showDetails?: boolean;
 }
 
-export default function InvoiceTemplate({ draft, customItems = [], showDetails = true }: InvoiceTemplateProps) {
+function fmtDh(n: number): string {
+  return n.toLocaleString('fr-MA', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' DH';
+}
+
+function fmtM(cm: number): string {
+  return (cm / 100).toFixed(2) + 'm';
+}
+
+export default function InvoiceTemplate({ draft, showDetails = true }: InvoiceTemplateProps) {
   const printRef = useRef<HTMLDivElement>(null);
   const { template, loading } = useInvoiceTemplate();
 
-  const pricePerCm = (draft.fabric?.price_per_meter ?? 0) / 100;
-  const seddarsFabric = draft.seddars.reduce((s, x) => s + seddariFabricCm(x), 0);
-  const formajaCount = draft.seddars.filter(s => s.junction === 'formaja').length;
-  const fabricCm = seddarsFabric + formajaCount * DEFAULTS.formajaFabricCm;
-  const fabricCost = Math.round(fabricCm * pricePerCm);
-  const seddariSewing = draft.seddars.length * DEFAULTS.seddariSewingPrice;
-  const formajaCost = formajaCount * DEFAULTS.formajaSewingPrice;
-  const cushionsCost = draft.cushions.reduce((s, c) => s + c.count * c.stitchPrice, 0);
-  const stuffingCost = draft.cushions.reduce((s, c) => s + (c.stuffing ? c.count * DEFAULTS.stuffingPrice : 0), 0);
-  const decorCost = draft.decorCushions.reduce((s, d) => s + d.count * d.stitchPrice, 0);
-  const extrasCost = draft.extras.reduce((s, e) => s + e.qty * e.price, 0);
-  const customTotal = customItems.reduce((s, i) => s + i.price, 0);
-  const computed = fabricCost + seddariSewing + formajaCost + cushionsCost + stuffingCost + decorCost + extrasCost + customTotal;
+  /* ─── حسابات المراحل ─── */
+
+  // المرحلة 1: الثوب
+  const fabric = draft.fabric;
+  const seddars = draft.seddars || [];
+  const seddarsFabricTotal = draft.seddarsFabricTotalOverride ?? seddars.reduce((sum, s) => sum + s.fabricConsumption, 0);
+  const fabricCost = fabric ? (seddarsFabricTotal / 100) * fabric.price_per_meter : 0;
+
+  // المرحلة 2: السدادر (عادية + فورمجة)
+  const normalSeddars = seddars.filter(s => s.type !== "formaja");
+  const formajaSeddars = seddars.filter(s => s.type === "formaja");
+
+  // المرحلة 3: خياطة السدادر
+  const stitches = draft.sedariStitches || [];
+  const stitchTotal = draft.stage3TotalOverride ?? stitches.reduce((sum, s) => sum + s.finalPrice, 0);
+
+  // المرحلة 4: المخاد
+  const cushions = draft.cushionItems || [];
+  const calcCushionTotal = (c: typeof cushions[0]) => {
+    const stitch = c.count * c.stitchFinalPrice;
+    const lwata = c.hasLwata ? c.count * c.lwataPrice : 0;
+    return stitch + lwata;
+  };
+  const cushionsTotal = draft.stage4TotalOverride ?? cushions.reduce((sum, c) => sum + calcCushionTotal(c), 0);
+
+  // المرحلة 5: الكيدور (بالقطعة فقط)
+  const decor = draft.decorItems || [];
+  const calcDecorTotal = (d: typeof decor[0]) => d.count * d.stitchFinalPrice;
+  const decorTotal = draft.stage5TotalOverride ?? decor.reduce((sum, d) => sum + calcDecorTotal(d), 0);
+
+  // المرحلة 6: الإضافات (لحايف + طابورية فقط)
+  const extrasStage = draft.extrasStage;
+  const lhayefTotal = extrasStage?.lhayef?.enabled
+    ? (extrasStage.lhayef.totalOverride ?? (extrasStage.lhayef.lengthM * extrasStage.lhayef.pricePerMeter))
+    : 0;
+  const tabouriaTotal = extrasStage?.tabouria?.enabled
+    ? (extrasStage.tabouria.totalOverride ?? (extrasStage.tabouria.count * extrasStage.tabouria.unitPrice))
+    : 0;
+  const extrasTotal = lhayefTotal + tabouriaTotal;
+
+  // المجموع
+  const computed = fabricCost + stitchTotal + cushionsTotal + decorTotal + extrasTotal;
   const total = draft.totalOverride ?? computed;
   const deposit = draft.deposit || 0;
   const remaining = total - deposit;
 
-  const lineItems = [
-    { desc: `🧵 الثوب (${draft.fabric?.name || 'غير محدد'})`, qty: fmtM(fabricCm), unit: draft.fabric?.price_per_meter || 0, total: fabricCost },
-    { desc: `✂️ خياطة السدادر (${draft.seddars.length})`, qty: draft.seddars.length, unit: DEFAULTS.seddariSewingPrice, total: seddariSewing },
-    ...(formajaCount > 0 ? [{ desc: `🔺 الفورمجات (${formajaCount})`, qty: formajaCount, unit: DEFAULTS.formajaSewingPrice, total: formajaCost }] : []),
-    ...(cushionsCost > 0 ? [{ desc: `🛏️ خياطة المخاد`, qty: draft.cushions.reduce((s, c) => s + c.count, 0), unit: '-', total: cushionsCost }] : []),
-    ...(stuffingCost > 0 ? [{ desc: `☁️ الحشو (لواط)`, qty: draft.cushions.filter(c => c.stuffing).reduce((s, c) => s + c.count, 0), unit: DEFAULTS.stuffingPrice, total: stuffingCost }] : []),
-    ...(decorCost > 0 ? [{ desc: `🎀 مخاد الديكور`, qty: draft.decorCushions.reduce((s, d) => s + d.count, 0), unit: '-', total: decorCost }] : []),
-    ...(extrasCost > 0 ? [{ desc: `➕ الإضافات`, qty: draft.extras.length, unit: '-', total: extrasCost }] : []),
-    ...customItems.map(item => ({ desc: `📎 ${item.name}`, qty: 1, unit: item.price, total: item.price })),
-  ];
+  /* ─── بناء سطور الفاتورة ─── */
+  const lineItems: { desc: string; qty: string; unit: string; total: number }[] = [];
+
+  // 1. الثوب
+  if (fabric) {
+    lineItems.push({
+      desc: `🧵 الثوب — ${fabric.name}`,
+      qty: fmtM(seddarsFabricTotal),
+      unit: fmtDh(fabric.price_per_meter) + '/م',
+      total: fabricCost,
+    });
+  }
+
+  // 2. خياطة السدادر (كل سداري على حدة)
+  stitches.forEach((s) => {
+    const seddari = seddars.find(sd => sd.id === s.seddariId);
+    const isFormaja = seddari?.type === "formaja";
+    const sameType = seddars.filter(sd => sd.type === seddari?.type);
+    const idx = sameType.findIndex(sd => sd.id === s.seddariId) + 1;
+    const label = isFormaja ? `🌀 فورمجة ${idx}` : `سداري ${idx}`;
+    lineItems.push({
+      desc: `✂️ خياطة ${label} — ${s.styleName}`,
+      qty: '1',
+      unit: fmtDh(s.basePrice),
+      total: s.finalPrice,
+    });
+  });
+
+  // 3. المخاد
+  cushions.forEach((c, idx) => {
+    const itemTotal = calcCushionTotal(c);
+    lineItems.push({
+      desc: `🛏️ مخدة ${idx + 1} — ${c.stitchStyleName} (${c.size}سم × ${c.count})`,
+      qty: String(c.count),
+      unit: fmtDh(c.stitchFinalPrice),
+      total: itemTotal,
+    });
+    if (c.hasLwata) {
+      lineItems.push({
+        desc: `   ↳ لواط — ${c.count} × ${c.lwataPrice} DH`,
+        qty: String(c.count),
+        unit: fmtDh(c.lwataPrice),
+        total: c.count * c.lwataPrice,
+      });
+    }
+  });
+
+  // 4. الكيدور
+  decor.forEach((d, idx) => {
+    const itemTotal = calcDecorTotal(d);
+    lineItems.push({
+      desc: `🌀 كيدور ${idx + 1} — ${d.shapeName} × ${d.count} قطعة`,
+      qty: String(d.count),
+      unit: fmtDh(d.stitchFinalPrice) + '/قطعة',
+      total: itemTotal,
+    });
+  });
+
+  // 5. الإضافات
+  if (extrasStage?.lhayef?.enabled) {
+    lineItems.push({
+      desc: `➕ اللحايف — ${extrasStage.lhayef.lengthM} متر`,
+      qty: String(extrasStage.lhayef.lengthM),
+      unit: fmtDh(extrasStage.lhayef.pricePerMeter) + '/م',
+      total: lhayefTotal,
+    });
+  }
+  if (extrasStage?.tabouria?.enabled) {
+    lineItems.push({
+      desc: `➕ الطابورية — ${extrasStage.tabouria.count} قطعة`,
+      qty: String(extrasStage.tabouria.count),
+      unit: fmtDh(extrasStage.tabouria.unitPrice) + '/قطعة',
+      total: tabouriaTotal,
+    });
+  }
 
   const handlePrint = () => window.print();
 
@@ -96,10 +195,13 @@ export default function InvoiceTemplate({ draft, customItems = [], showDetails =
           {/* Customer */}
           <div className="rounded-xl p-4 mb-6" style={{ backgroundColor: `${template.accentColor}10` }}>
             <p className="font-bold mb-1" style={{ color: template.accentColor }}>الزبون:</p>
-            <p className="text-gray-700">{draft.customer.name || 'غير محدد'}</p>
-            <p className="text-gray-500 text-sm" dir="ltr">{draft.customer.phone}</p>
-            {draft.customer.deliveryDate && (
+            <p className="text-gray-700">{draft.customer?.name || 'غير محدد'}</p>
+            <p className="text-gray-500 text-sm" dir="ltr">{draft.customer?.phone}</p>
+            {draft.customer?.deliveryDate && (
               <p className="text-gray-500 text-sm">تاريخ التسليم: {draft.customer.deliveryDate}</p>
+            )}
+            {draft.customer?.notes && (
+              <p className="text-gray-500 text-sm mt-1">ملاحظات: {draft.customer.notes}</p>
             )}
           </div>
 
@@ -118,7 +220,7 @@ export default function InvoiceTemplate({ draft, customItems = [], showDetails =
                 lineItems.map((item, i) => (
                   <tr key={i} className="border-b border-[#E8E4DC]">
                     <td className="py-3 px-4 text-gray-700">{item.desc}</td>
-                    <td className="py-3 px-4 text-center text-gray-600">{typeof item.unit === 'number' ? fmtDh(item.unit) : item.unit}</td>
+                    <td className="py-3 px-4 text-center text-gray-600">{item.unit}</td>
                     <td className="py-3 px-4 text-center text-gray-600">{item.qty}</td>
                     <td className="py-3 px-4 text-left font-bold" style={{ color: template.accentColor }}>{fmtDh(item.total)}</td>
                   </tr>
@@ -177,7 +279,11 @@ export default function InvoiceTemplate({ draft, customItems = [], showDetails =
 
       {/* Actions */}
       <div className="flex justify-center gap-4 print:hidden">
-        <button onClick={handlePrint} className="flex items-center gap-2 px-6 py-3 rounded-xl font-bold text-white transition" style={{ backgroundColor: template.accentColor }}>
+        <button
+          onClick={handlePrint}
+          className="flex items-center gap-2 px-6 py-3 rounded-xl font-bold text-white transition"
+          style={{ backgroundColor: template.accentColor }}
+        >
           <Printer className="w-5 h-5" /> طباعة / PDF
         </button>
       </div>

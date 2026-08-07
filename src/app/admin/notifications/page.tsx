@@ -9,8 +9,12 @@ import type { FoamOrder } from "@/types/foam-types";
 type DbOrder = Database["public"]["Tables"]["orders"]["Row"];
 type DbOrderPart = Database["public"]["Tables"]["order_parts"]["Row"];
 
+type OrderPartWithStatus = DbOrderPart & {
+  status?: string | null;
+};
+
 interface OrderWithParts extends DbOrder {
-  parts: DbOrderPart[];
+  parts: OrderPartWithStatus[];
 }
 
 type FoamOrderWithProduct = FoamOrder & {
@@ -179,7 +183,7 @@ export default function AdminNotificationsPage() {
         id: `today-${o.id}`,
         type: "warning",
         title: `تسليم اليوم — ${o.customer_name || "—"}`,
-        message: `ORD-${o.order_number} موعد تسليمه اليوم (${todayStr}). المجموع: ${formatCurrency(o.total || 0)}.`,
+        message: `ORD-${o.order_number} موعد تسليمه اليوم (${todayStr}). المجموع: ${formatCurrency((o as any).total_amount || (o as any).total || 0)}.`,
         action: `/admin/orders/${o.id}`,
         actionLabel: "فتح الطلب",
         orderId: o.id,
@@ -212,7 +216,7 @@ export default function AdminNotificationsPage() {
         id: `review-${o.id}`,
         type: "info",
         title: `بانتظار المراجعة — ${o.customer_name || "—"}`,
-        message: `ORD-${o.order_number} بانتظار مراجعتك وإرسالها للخياط. المجموع: ${formatCurrency(o.total || 0)}.`,
+        message: `ORD-${o.order_number} بانتظار مراجعتك وإرسالها للخياط. المجموع: ${formatCurrency((o as any).total_amount || (o as any).total || 0)}.`,
         action: `/admin/orders/${o.id}`,
         actionLabel: "مراجعة الطلب",
         orderId: o.id,
@@ -253,7 +257,7 @@ export default function AdminNotificationsPage() {
         id: `stale-${o.id}`,
         type: "info",
         title: `طلب معلق — ${o.customer_name || "—"}`,
-        message: `ORD-${o.order_number} معلق منذ أكثر من 3 أيام. المجموع: ${formatCurrency(o.total || 0)}. راجع حالته.`,
+        message: `ORD-${o.order_number} معلق منذ أكثر من 3 أيام. المجموع: ${formatCurrency((o as any).total_amount || (o as any).total || 0)}. راجع حالته.`,
         action: `/admin/orders/${o.id}`,
         actionLabel: "مراجعة",
         orderId: o.id,

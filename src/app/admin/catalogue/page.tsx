@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
-import { Plus, Trash2, Edit3, X, Check, Loader2, ChevronLeft } from "lucide-react";
+import { Plus, Trash2, Edit3, X, Check, Loader2 } from "lucide-react";
 import Image from "next/image";
 
 /* ─── Types ─── */
@@ -62,16 +62,53 @@ async function fetchRembourrage() {
   return data || [];
 }
 
-// ─── Foam Products Fetcher
 async function fetchFoamProducts() {
   const { data, error } = await supabase.from("foam_products").select("*").order("name", { ascending: true });
   if (error) throw error;
   return (data || []) as any[];
 }
 
-// ─── Aqiq Shape Fetcher
-async function fetchAqiqShapesFn() {
-  return fetchAqiqShapes();
+// ✅ جديد: أشكال خياطة السدادر
+async function fetchSeddariStitches() {
+  const { data, error } = await supabase
+    .from("stitch_styles")
+    .select("*")
+    .eq("target", "seddari")
+    .order("name");
+  if (error) throw error;
+  return (data || []).map((row) => ({ ...row, image_url: row.image_url || null }));
+}
+
+// ✅ جديد: أشكال خياطة المخاد
+async function fetchCushionStitches() {
+  const { data, error } = await supabase
+    .from("stitch_styles")
+    .select("*")
+    .eq("target", "cushion")
+    .order("name");
+  if (error) throw error;
+  return (data || []).map((row) => ({ ...row, image_url: row.image_url || null }));
+}
+
+// ✅ جديد: أشكال خياطة الكيدور
+async function fetchDecorStitches() {
+  const { data, error } = await supabase
+    .from("stitch_styles")
+    .select("*")
+    .eq("target", "decor")
+    .order("name");
+  if (error) throw error;
+  return (data || []).map((row) => ({ ...row, image_url: row.image_url || null }));
+}
+
+// ✅ جديد: أشكال الكيدور
+async function fetchDecorShapes() {
+  const { data, error } = await supabase
+    .from("decor_cushion_shapes")
+    .select("*")
+    .order("name");
+  if (error) throw error;
+  return (data || []).map((row) => ({ ...row, image_url: row.image_url || null }));
 }
 
 const tabs: CatalogueTab[] = [
@@ -83,12 +120,9 @@ const tabs: CatalogueTab[] = [
     fields: [
       { key: "image_url", label: "الصورة", type: "image" },
       { key: "name", label: "الاسم" },
-      { key: "type", label: "النوع", type: "select", options: ["velours", "cuir", "tissu", "autre"] },
+      { key: "color", label: "اللون" },
       { key: "price_per_meter", label: "السعر/متر", type: "number" },
-      { key: "cost_per_meter", label: "التكلفة/متر", type: "number" },
-      { key: "stock_meters", label: "المخزون (متر)", type: "number" },
-      { key: "min_stock_alert", label: "تنبيه الحد الأدنى", type: "number" },
-      { key: "supplier", label: "المورد" },
+      { key: "active", label: "نشط", type: "boolean" },
     ],
     fetcher: fetchFabrics,
   },
@@ -100,12 +134,10 @@ const tabs: CatalogueTab[] = [
     fields: [
       { key: "image_url", label: "الصورة", type: "image" },
       { key: "name", label: "الاسم" },
-      { key: "type", label: "النوع", type: "select", options: ["laine", "synthetique", "mixte", "autre"] },
-      { key: "price_per_meter", label: "السعر/متر", type: "number" },
-      { key: "cost_per_meter", label: "التكلفة/متر", type: "number" },
-      { key: "stock_meters", label: "المخزون (متر)", type: "number" },
-      { key: "min_stock_alert", label: "تنبيه الحد الأدنى", type: "number" },
-      { key: "supplier", label: "المورد" },
+      { key: "description", label: "الوصف" },
+      { key: "price_per_m2", label: "السعر/م²", type: "number" },
+      { key: "stock_m2", label: "المخزون (م²)", type: "number" },
+      { key: "is_active", label: "نشط", type: "boolean" },
     ],
     fetcher: fetchTapis,
   },
@@ -117,11 +149,10 @@ const tabs: CatalogueTab[] = [
     fields: [
       { key: "image_url", label: "الصورة", type: "image" },
       { key: "name", label: "الاسم" },
-      { key: "type", label: "النوع", type: "select", options: ["pin", "chene", "hetre", "autre"] },
-      { key: "price_per_meter", label: "السعر/متر", type: "number" },
-      { key: "cost_per_meter", label: "التكلفة/متر", type: "number" },
-      { key: "stock_meters", label: "المخزون (متر)", type: "number" },
-      { key: "min_stock_alert", label: "تنبيه الحد الأدنى", type: "number" },
+      { key: "wood_type", label: "نوع الخشب", type: "select", options: ["solid", "mdf", "plywood", "particle"] },
+      { key: "price", label: "السعر", type: "number" },
+      { key: "cost_price", label: "التكلفة", type: "number" },
+      { key: "stock", label: "المخزون", type: "number" },
       { key: "supplier", label: "المورد" },
     ],
     fetcher: fetchBois,
@@ -151,13 +182,10 @@ const tabs: CatalogueTab[] = [
     fields: [
       { key: "image_url", label: "الصورة", type: "image" },
       { key: "name", label: "الاسم" },
-      { key: "price", label: "السعر", type: "number" },
-      { key: "cost", label: "التكلفة", type: "number" },
-      { key: "stock", label: "المخزون", type: "number" },
-      { key: "min_stock_alert", label: "تنبيه الحد الأدنى", type: "number" },
-      { key: "supplier", label: "المورد" },
+      { key: "price_per_meter", label: "السعر/متر", type: "number" },
+      { key: "active", label: "نشط", type: "boolean" },
     ],
-    fetcher: fetchAqiqShapesFn,
+    fetcher: fetchAqiqShapes,
   },
   {
     key: "rembourrage",
@@ -181,13 +209,72 @@ const tabs: CatalogueTab[] = [
     fields: [
       { key: "image_url", label: "الصورة", type: "image" },
       { key: "name", label: "الاسم" },
+      { key: "description", label: "الوصف" },
       { key: "price_per_meter", label: "السعر/متر", type: "number" },
-      { key: "formage_price_square", label: "فورمجة مربع", type: "number" },
-      { key: "formage_price_triangle", label: "فورمجة مثلث", type: "number" },
+      { key: "square_corner_price", label: "فورمجة مربع", type: "number" },
+      { key: "triangle_corner_price", label: "فورمجة مثلث", type: "number" },
       { key: "default_width_cm", label: "العرض الافتراضي (سم)", type: "number" },
-      { key: "is_active", label: "نشط", type: "select", options: ["true", "false"] },
+      { key: "is_active", label: "نشط", type: "boolean" },
     ],
     fetcher: fetchFoamProducts,
+  },
+  // ✅ جديد: أشكال خياطة السدادر
+  {
+    key: "seddari_stitches",
+    label: "✂️ خياطة السدادر",
+    table: "stitch_styles",
+    bucket: "catalogue",
+    fields: [
+      { key: "image_url", label: "الصورة", type: "image" },
+      { key: "name", label: "اسم الشكل" },
+      { key: "price", label: "السعر (DH)", type: "number" },
+      { key: "description", label: "الوصف" },
+      { key: "active", label: "نشط", type: "boolean" },
+    ],
+    fetcher: fetchSeddariStitches,
+  },
+  // ✅ جديد: أشكال خياطة المخاد
+  {
+    key: "cushion_stitches",
+    label: "🛏️ خياطة المخاد",
+    table: "stitch_styles",
+    bucket: "catalogue",
+    fields: [
+      { key: "image_url", label: "الصورة", type: "image" },
+      { key: "name", label: "اسم الشكل" },
+      { key: "price", label: "السعر (DH)", type: "number" },
+      { key: "description", label: "الوصف" },
+      { key: "active", label: "نشط", type: "boolean" },
+    ],
+    fetcher: fetchCushionStitches,
+  },
+  // ✅ جديد: أشكال خياطة الكيدور
+  {
+    key: "decor_stitches",
+    label: "🌀 خياطة الكيدور",
+    table: "stitch_styles",
+    bucket: "catalogue",
+    fields: [
+      { key: "image_url", label: "الصورة", type: "image" },
+      { key: "name", label: "اسم الشكل" },
+      { key: "price", label: "السعر (DH)", type: "number" },
+      { key: "description", label: "الوصف" },
+      { key: "active", label: "نشط", type: "boolean" },
+    ],
+    fetcher: fetchDecorStitches,
+  },
+  // ✅ جديد: أشكال الكيدور
+  {
+    key: "decor_shapes",
+    label: "🌀 أشكال الكيدور",
+    table: "decor_cushion_shapes",
+    bucket: "catalogue",
+    fields: [
+      { key: "image_url", label: "الصورة", type: "image" },
+      { key: "name", label: "اسم الشكل" },
+      { key: "active", label: "نشط", type: "boolean" },
+    ],
+    fetcher: fetchDecorShapes,
   },
 ];
 
@@ -198,10 +285,8 @@ function formatFieldValue(value: any, field: FieldDef): string {
     const n = Number(value);
     return isNaN(n) ? "—" : n.toLocaleString("fr-MA");
   }
-  if (field.type === "boolean" || field.type === "select") {
-    if (value === true || value === "true") return "✅ نعم";
-    if (value === false || value === "false") return "❌ لا";
-    return String(value);
+  if (field.type === "boolean") {
+    return value === true ? "✅ نعم" : "❌ لا";
   }
   return String(value);
 }
@@ -288,22 +373,44 @@ export default function CataloguePage() {
     }
   };
 
-  /* Save */
+  /* ✅ Save — Fixed */
   const handleSave = async () => {
     setSaving(true);
     try {
       const payload: Record<string, any> = {};
+
       currentTab.fields.forEach((field) => {
+        const val = formData[field.key];
+
         if (field.key === "image_url") {
-          payload[field.key] = formData[field.key] || null;
+          payload[field.key] = val || null;
         } else if (field.type === "number") {
-          payload[field.key] = formData[field.key] !== undefined ? Number(formData[field.key]) : null;
+          payload[field.key] = (val !== undefined && val !== "" && val !== null && !isNaN(Number(val)))
+            ? Number(val)
+            : null;
         } else if (field.type === "boolean") {
-          payload[field.key] = formData[field.key] === true || formData[field.key] === "true";
+          payload[field.key] = val === true || val === "true";
         } else {
-          payload[field.key] = formData[field.key] || null;
+          payload[field.key] = val !== undefined && val !== "" ? val : null;
         }
       });
+
+      // ✅ إضافة target تلقائياً للجداول المشتركة
+      if (currentTab.table === "stitch_styles" && !editingId) {
+        if (currentTab.key === "seddari_stitches") payload.target = "seddari";
+        else if (currentTab.key === "cushion_stitches") payload.target = "cushion";
+        else if (currentTab.key === "decor_stitches") payload.target = "decor";
+      }
+
+      if (!editingId) {
+        payload.created_at = new Date().toISOString();
+      }
+
+      Object.keys(payload).forEach((key) => {
+        if (payload[key] === undefined) delete payload[key];
+      });
+
+      console.log("Payload:", payload);
 
       if (editingId) {
         const { error } = await supabase
@@ -320,9 +427,9 @@ export default function CataloguePage() {
       setEditingId(null);
       setFormData({});
       loadData();
-    } catch (err) {
+    } catch (err: any) {
       console.error("فشل الحفظ:", err);
-      alert("فشل الحفظ، تحقق من البيانات");
+      alert(err?.message || err?.error?.message || "فشل الحفظ، تحقق من البيانات");
     } finally {
       setSaving(false);
     }
@@ -368,7 +475,9 @@ export default function CataloguePage() {
     setEditingId(null);
     const initial: Record<string, any> = {};
     currentTab.fields.forEach((field) => {
-      initial[field.key] = field.type === "number" ? 0 : field.type === "boolean" ? false : "";
+      if (field.type === "number") initial[field.key] = 0;
+      else if (field.type === "boolean") initial[field.key] = false;
+      else initial[field.key] = "";
     });
     setFormData(initial);
     setShowForm(true);
@@ -568,10 +677,7 @@ export default function CataloguePage() {
                       onChange={(e) =>
                         setFormData((prev) => ({
                           ...prev,
-                          [field.key]:
-                            field.options?.[0] === "true" || field.options?.[0] === "false"
-                              ? e.target.value === "true"
-                              : e.target.value,
+                          [field.key]: e.target.value,
                         }))
                       }
                       className="w-full px-4 py-2.5 bg-[#F5F0E8] border border-[#E8E4DC] rounded-xl text-sm outline-none focus:ring-2 focus:ring-[#C9A84C]"
@@ -579,14 +685,27 @@ export default function CataloguePage() {
                       <option value="">— اختر —</option>
                       {field.options?.map((opt) => (
                         <option key={opt} value={opt}>
-                          {opt === "true"
-                            ? "✅ نعم"
-                            : opt === "false"
-                            ? "❌ لا"
-                            : opt}
+                          {opt}
                         </option>
                       ))}
                     </select>
+                  ) : field.type === "boolean" ? (
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={formData[field.key] === true || formData[field.key] === "true"}
+                        onChange={(e) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            [field.key]: e.target.checked,
+                          }))
+                        }
+                        className="w-5 h-5 accent-[#1B5E3B] rounded"
+                      />
+                      <span className="text-sm text-gray-600">
+                        {formData[field.key] === true || formData[field.key] === "true" ? "✅ نعم" : "❌ لا"}
+                      </span>
+                    </label>
                   ) : field.type === "number" ? (
                     <input
                       type="number"

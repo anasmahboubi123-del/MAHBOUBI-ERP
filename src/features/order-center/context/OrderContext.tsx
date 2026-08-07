@@ -89,11 +89,11 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
   const [discountReason, setDiscountReason] = useState("");
 
   /* ─── totals ─── */
-  const subtotal = cart.items.reduce((s, it) => s + it.totalPrice, 0);
-  const discount = cart.financial.discountAmount || 0;
-  const delivery = cart.financial.deliveryCost || 0;
+  const subtotal = cart.items.reduce((s, it) => s + (Number(it.totalPrice) || 0), 0);
+  const discount = Number(cart.financial.discountAmount) || 0;
+  const delivery = Number(cart.financial.deliveryCost) || 0;
   const total = Math.max(0, subtotal - discount + delivery);
-  const deposit = cart.financial.depositAmount || 0;
+  const deposit = Number(cart.financial.depositAmount) || 0;
   const remaining = Math.max(0, total - deposit);
 
   const cartTotals = { subtotal, discount, delivery, total, deposit, remaining };
@@ -137,7 +137,7 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
   const applyDiscount = useCallback((amount: number, reason?: string) => {
     setCart((prev) => ({
       ...prev,
-      financial: { ...prev.financial, discountAmount: amount, discountInput: String(amount) },
+      financial: { ...prev.financial, discountAmount: Number(amount) || 0, discountInput: String(amount) },
     }));
     if (reason) setDiscountReason(reason);
   }, []);
@@ -145,14 +145,14 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
   const applyDeposit = useCallback((amount: number) => {
     setCart((prev) => ({
       ...prev,
-      financial: { ...prev.financial, depositAmount: amount, depositInput: String(amount) },
+      financial: { ...prev.financial, depositAmount: Number(amount) || 0, depositInput: String(amount) },
     }));
   }, []);
 
   const updateDeliveryCost = useCallback((cost: number) => {
     setCart((prev) => ({
       ...prev,
-      financial: { ...prev.financial, deliveryCost: cost },
+      financial: { ...prev.financial, deliveryCost: Number(cost) || 0 },
     }));
   }, []);
 
@@ -197,7 +197,7 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
         // 1. Generate order number
         const orderNumber = await getNextOrderNumber();
 
-        // 2. Create order — متوافق مع أعمدة Supabase الفعلية
+        // 2. Create order — ✅ كل القيم محوّلة لـ Number
         const { data: order, error: orderError } = await supabase
           .from("orders")
           .insert({
@@ -208,13 +208,13 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
             customer_address: cart.customer.address || null,
             customer_city: cart.customer.city || null,
             status,
-            subtotal,
-            total_amount: total,
-            discount_amount: discount,
+            subtotal: Number(subtotal) || 0,
+            total_amount: Number(total) || 0,
+            discount_amount: Number(discount) || 0,
             discount_reason: discountReason || null,
-            delivery_cost: delivery,
-            deposit_amount: deposit,
-            remaining_amount: remaining,
+            delivery_cost: Number(delivery) || 0,
+            deposit_amount: Number(deposit) || 0,
+            remaining_amount: Number(remaining) || 0,
             delivery_expected_date: cart.delivery.expectedDate || null,
             delivery_method: cart.delivery.method || "pickup",
             delivery_address: cart.delivery.address || null,
@@ -227,21 +227,21 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
 
         if (orderError || !order) throw orderError;
 
-        // 3. Create order items — مع kind و label المطلوبين
+        // 3. Create order items — ✅ كل القيم numbers
         const itemsPayload = cart.items.map((item) => ({
           order_id: order.id,
-          kind: item.productType || "product",      // ← إلزامي
-          label: item.productName || "منتج",         // ← ✅ أُضيف: إلزامي
+          kind: item.productType || "product",
+          label: item.productName || "منتج",
           product_type: item.productType,
           product_name: item.productName,
-          quantity: item.quantity,
-          unit_price: item.unitPrice,
-          total_price: item.totalPrice,
-          details: item.details,
-          calculations: item.calculations,
+          quantity: Math.round(Number(item.quantity) || 0),        // ✅ integer
+          unit_price: Number(item.unitPrice) || 0,                   // ✅ number
+          total_price: Number(item.totalPrice) || 0,                 // ✅ number
+          details: item.details || {},
+          calculations: item.calculations || {},
           production_details: item.productionDetails || {},
           line_notes: item.lineNotes || null,
-          line_discount: item.lineDiscount || 0,
+          line_discount: Number(item.lineDiscount) || 0,
           thumbnail_url: item.thumbnailUrl || null,
         }));
 

@@ -1,44 +1,69 @@
-// src/features/order-center/services/documentConditions.ts
 import { supabase } from "@/lib/supabaseClient";
+import type { DocumentLanguage } from "../i18n/documents";
 
 export type DocType = "devis" | "bon_de_commande" | "facture" | "work_order";
 
-const FALLBACK_CONDITIONS: Record<DocType, string[]> = {
+const FALLBACK_CONDITIONS: Record<string, string[]> = {
   devis: [
-    "عرض السعر صالح لمدة 15 يومًا من تاريخ الإصدار.",
-    "الأسعار قابلة للتغيير بعد انتهاء مدة صلاحية العرض.",
-    "لا يبدأ التصنيع إلا بعد تأكيد الطلب ودفع العربون.",
-    "عرض السعر لا يعتبر فاتورة نهائية.",
-    "أي تعديل في المقاسات قد يؤدي إلى تغيير السعر.",
+    "1. عرض السعر صالح لمدة 15 يوماً.",
+    "2. لا يبدأ التصنيع إلا بعد دفع العربون.",
+    "3. التسليم خلال 3-4 أسابيع من تأكيد الطلب.",
   ],
   bon_de_commande: [
-    "دفع العربون إلزامي لبدء التصنيع.",
-    "العربون غير قابل للاسترجاع بعد بدء التصنيع.",
-    "مدة التصنيع القصوى 90 يومًا.",
-    "يجب دفع المبلغ المتبقي قبل الاستلام.",
-    "يُنصح العميل بفحص المنتج عند الاستلام.",
+    "1. دفع العربون إلزامي لبدء التصنيع.",
+    "2. العربون غير قابل للاسترجاع بعد بدء العمل.",
+    "3. مدة التصنيع القصوى 90 يوماً.",
   ],
   facture: [
-    "الفاتورة تُثبت عملية البيع النهائية.",
-    "شكراً لثقتكم في Ameublement & Déco El Mahboubi.",
-    "يمكن إعادة طباعة الفاتورة في أي وقت.",
+    "1. الفاتورة تُثبت عملية البيع النهائية.",
+    "2. الضمان 6 أشهر على الخياطة.",
   ],
   work_order: [
-    "أمر شغل داخلي — للورشة فقط.",
-    "يُراجع المدير التقني جميع المواصفات قبل الإنتاج.",
+    "1. أمر شغل داخلي — للورشة فقط.",
+    "2. يُراجع المدير التقني جميع المواصفات قبل الإنتاج.",
   ],
 };
 
-export async function getDocumentConditions(docType: string): Promise<string[]> {
-  const key = (docType as DocType) in FALLBACK_CONDITIONS ? (docType as DocType) : "devis";
+/** يجلب الشروط من Supabase حسب نوع المستند واللغة */
+export async function getDocumentConditions(
+  docType: DocType,
+  lang: DocumentLanguage = "ar"
+): Promise<string[]> {
+  const key = docType in FALLBACK_CONDITIONS ? docType : "devis";
+
   try {
+    // تحديد العمود حسب اللغة
+    let column: string;
+    if (lang === "fr") {
+      column = `${docType}_conditions_fr`;
+    } else if (lang === "es") {
+      column = `${docType}_conditions_es`;
+    } else if (lang === "it") {
+      column = `${docType}_conditions_it`;
+    } else {
+      column = `${docType}_conditions`;
+    }
+
     const { data, error } = await supabase
       .from("document_conditions")
-      .select("conditions")
-      .eq("doc_type", docType)
+      .select(column)
+      .limit(1)
       .maybeSingle();
+
     if (error || !data) return FALLBACK_CONDITIONS[key];
-    return data.conditions || FALLBACK_CONDITIONS[key];
+
+    const raw = (data as any)[column];
+    if (!raw) return FALLBACK_CONDITIONS[key];
+
+    // إذا كان نصاً (مفصول بـ \n)
+    if (typeof raw === "string") {
+      return raw.split("\n").filter(Boolean);
+    }
+
+    // إذا كان مصفوفة
+    if (Array.isArray(raw)) return raw;
+
+    return FALLBACK_CONDITIONS[key];
   } catch {
     return FALLBACK_CONDITIONS[key];
   }

@@ -4,8 +4,8 @@ import React, { useState, useEffect, useRef } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
-import { PrintModal } from "@/features/documents/components/PrintModal";
-import type { DocumentType } from "@/features/order-center/types";
+import PrintModal from "@/features/order-center/components/PrintModal";
+import type { DocumentType, ProductType } from "@/features/order-center/types";
 
 /* ─── Types ─── */
 interface ChatMessage {
@@ -622,12 +622,13 @@ function PrintModalAdapter({
   const orderItemsForPrint = items.map((it) => ({
     id: it.id,
     orderItemId: it.id,
-    productType: it.productType,
+    productType: it.productType as ProductType,
     productName: it.productName,
     quantity: it.quantity,
     unitPrice: it.unitPrice,
     totalPrice: it.totalPrice,
     details: it.details || {},
+    calculations: it.calculations || {},
     thumbnailUrl: it.thumbnailUrl,
     addedAt: new Date().toISOString(),
   }));
@@ -646,7 +647,7 @@ function PrintModalAdapter({
       documentType={docType}
       printOptions={{
         documentType: docType,
-        printVariant: "standard",
+        printVariant: "admin",
         language: "ar",
         includeProductionDetails: includeDetails,
         includePrices,

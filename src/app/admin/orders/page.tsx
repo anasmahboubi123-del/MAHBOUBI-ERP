@@ -8,13 +8,18 @@ import type { FoamOrder } from "@/types/foam-types";
 
 type DbOrder = Database["public"]["Tables"]["orders"]["Row"];
 type DbOrderPart = Database["public"]["Tables"]["order_parts"]["Row"];
+type OrderPart = DbOrderPart & {
+  status?: string | null;
+  supplier_phone?: string | null;
+  whatsapp_message?: string | null;
+};
 type DbTailor = Database["public"]["Tables"]["tailors"]["Row"];
 
 type OrderStatus = "new" | "review" | "sent" | "in_progress" | "partial" | "ready" | "late" | "delivered" | "all";
 type FoamOrderStatus = string;
 
 interface OrderWithParts extends DbOrder {
-  parts: DbOrderPart[];
+  parts: OrderPart[];
 }
 
 type FoamOrderWithProduct = FoamOrder & {
@@ -33,6 +38,10 @@ const partIcons: Record<string, string> = {
   default: "📦",
 };
 
+function getPartIcon(type: string | null | undefined): string {
+  return partIcons[type ?? "default"] || partIcons.default;
+}
+
 function getStatusLabel(status: string): string {
   const map: Record<string, string> = {
     new: "جديد",
@@ -47,7 +56,7 @@ function getStatusLabel(status: string): string {
   return map[status] || status;
 }
 
-function getPartStatusLabel(status: string | null): string {
+function getPartStatusLabel(status: string | null | undefined): string {
   const map: Record<string, string> = {
     pending: "بانتظار الإرسال",
     sent: "مرسل",
@@ -69,7 +78,9 @@ function getDaysLeft(deliveryDate: string | null): number {
 }
 
 function getPartsSummary(parts: DbOrderPart[]): React.ReactNode {
-  const types = Array.from(new Set(parts.map((p) => p.part_type)));
+  const types = Array.from(
+    new Set(parts.map((p) => p.part_type).filter((t): t is string => t !== null && t !== undefined))
+  );
   return (
     <>
       {types.map((t) => (
@@ -229,7 +240,7 @@ export default function AdminOrdersPage() {
             orderId: o.id,
             customer: o.customer_name || "—",
             daysLeft: days,
-            partLabel: remPart.label,
+            partLabel: remPart.label ?? "",
           });
         }
       }
@@ -251,7 +262,7 @@ export default function AdminOrdersPage() {
             orderId: o.id,
             customer: o.customer_name || "—",
             daysLeft: days,
-            partLabel: tapisPart.label,
+            partLabel: tapisPart.label ?? "",
             deliveryDate: o.delivery_date || "",
           });
         }
@@ -400,7 +411,7 @@ export default function AdminOrdersPage() {
                 const daysLeft = getDaysLeft(order.delivery_date);
                 const isUrgent = daysLeft <= 2 && order.status !== "delivered" && order.status !== "ready";
                 const partsSummary = getPartsSummary(order.parts);
-                const depositPercent = order.total > 0 ? Math.round((order.deposit / order.total) * 100) : 0;
+                const depositPercent = (order.total_amount || 0) > 0 ? Math.round(((order.deposit_amount || 0) / (order.total_amount || 0)) * 100) : 0;
                 const hasTapis = order.parts.some((p) => p.part_type === "tapis");
 
                 return (
@@ -434,11 +445,11 @@ export default function AdminOrdersPage() {
                     <div className="flex items-center justify-between bg-[#F5F0E8] rounded-xl p-3 mb-3">
                       <div>
                         <p className="text-xs text-gray-500">المجموع</p>
-                        <p className="font-bold text-[#1B5E3B]">DH {order.total.toLocaleString()}</p>
+                        <p className="font-bold text-[#1B5E3B]">DH {(order.total_amount || 0).toLocaleString()}</p>
                       </div>
                       <div className="text-left">
                         <p className="text-xs text-gray-500">التسبيق ({depositPercent}%)</p>
-                        <p className="font-bold text-[#C9A84C]">DH {order.deposit.toLocaleString()}</p>
+                        <p className="font-bold text-[#C9A84C]">DH {(order.deposit_amount || 0).toLocaleString()}</p>
                       </div>
                     </div>
 
@@ -502,8 +513,8 @@ export default function AdminOrdersPage() {
                     <span className="text-sm text-gray-700">{order.foam_products?.name || "—"}</span>
                   </div>
                   <div className="flex items-center justify-between bg-[#F5F0E8] rounded-xl p-3 mb-3">
-                    <div><p className="text-xs text-gray-500">السعر النهائي</p><p className="font-bold text-[#1B5E3B]">DH {(order.final_price || 0).toLocaleString()}</p></div>
-                    <div className="text-left"><p className="text-xs text-gray-500">التسبيق</p><p className="font-bold text-[#C9A84C]">DH {(order.deposit || 0).toLocaleString()}</p></div>
+                    <div><p className="text-xs text-gray-500">السعر النهائي</p><p className="font-bold text-[#1B5E3B]">DH {(order.final_total || 0).toLocaleString()}</p></div>
+                    <div className="text-left"><p className="text-xs text-gray-500">التسبيق</p><p className="font-bold text-[#C9A84C]">DH {(order.deposit_amount || 0).toLocaleString()}</p></div>
                   </div>
                   <div className="flex items-center justify-between text-xs">
                     <span className="text-gray-500">📅 تسليم: {order.delivery_date ? new Date(order.delivery_date).toLocaleDateString("ar-MA") : "—"}</span>
@@ -547,13 +558,13 @@ function FoamOrderDrawer({ order, onClose, onRefresh }: { order: FoamOrderWithPr
   };
 
   const sendWhatsApp = () => {
-    if (!order.suppliers?.phone) { alert("لا يوجد هاتف للمورد"); return; }
+    if (!order.suppliers?.name) { alert("لا يوجد هاتف للمورد"); return; }
     const msg = `مرحباً ${order.suppliers.name}،
 طلبية بونج: FOAM-${order.order_number}
 المنتج: ${order.foam_products?.name || "—"}
-الكمية: ${order.total_meters} متر
-السعر: ${order.final_price} درهم`;
-    window.open(`https://wa.me/${order.suppliers.phone.replace(/\D/g, "")}?text=${encodeURIComponent(msg)}`, "_blank");
+الكمية: ${order.total_length_meters || 0} متر
+السعر: ${order.final_total || 0} درهم`;
+    window.open(`https://wa.me/${(order.suppliers as any).phone?.replace(/\D/g, "")}?text=${encodeURIComponent(msg)}`, "_blank");
   };
 
   const st = foamStatusMap[order.status] || foamStatusMap.pending;
@@ -571,8 +582,8 @@ function FoamOrderDrawer({ order, onClose, onRefresh }: { order: FoamOrderWithPr
           <p className="font-bold text-lg">{order.customer_name || "—"}</p>
           <p className="text-sm text-gray-500">📞 {order.customer_phone || "—"}</p>
           <div className="flex items-center justify-between mt-3 bg-[#F5F0E8] rounded-xl p-3">
-            <div><p className="text-xs text-gray-500">السعر النهائي</p><p className="font-bold text-[#1B5E3B]">DH {(order.final_price || 0).toLocaleString()}</p></div>
-            <div className="text-left"><p className="text-xs text-gray-500">التسبيق</p><p className="font-bold text-[#C9A84C]">DH {(order.deposit || 0).toLocaleString()}</p></div>
+            <div><p className="text-xs text-gray-500">السعر النهائي</p><p className="font-bold text-[#1B5E3B]">DH {(order.final_total || 0).toLocaleString()}</p></div>
+            <div className="text-left"><p className="text-xs text-gray-500">التسبيق</p><p className="font-bold text-[#C9A84C]">DH {(order.deposit_amount || 0).toLocaleString()}</p></div>
           </div>
         </div>
         <div className="bg-white rounded-2xl p-4 shadow-sm border border-[#E8E4DC]">
@@ -580,7 +591,7 @@ function FoamOrderDrawer({ order, onClose, onRefresh }: { order: FoamOrderWithPr
           <p className="text-sm"><span className="text-gray-500">المنتج:</span> <span className="font-bold">{order.foam_products?.name || "—"}</span></p>
           <p className="text-sm"><span className="text-gray-500">الارتفاع:</span> <span className="font-bold">{order.height_cm} سم</span></p>
           <p className="text-sm"><span className="text-gray-500">العرض:</span> <span className="font-bold">{order.width_cm} سم</span></p>
-          <p className="text-sm"><span className="text-gray-500">الكمية:</span> <span className="font-bold">{order.total_meters} متر</span></p>
+          <p className="text-sm"><span className="text-gray-500">الكمية:</span> <span className="font-bold">{order.total_length_meters || 0} متر</span></p>
           <p className="text-sm"><span className="text-gray-500">المورد:</span> <span className="font-bold">{order.suppliers?.name || "—"}</span></p>
         </div>
         <div className="bg-white rounded-2xl p-4 shadow-sm border border-[#E8E4DC]">
@@ -654,7 +665,7 @@ function QuickReviewDrawer({
     window.open(url, "_blank");
   };
 
-  const depositPercent = order.total > 0 ? Math.round((order.deposit / order.total) * 100) : 0;
+  const depositPercent = (order.total_amount || 0) > 0 ? Math.round(((order.deposit_amount || 0) / (order.total_amount || 0)) * 100) : 0;
 
   return (
     <>
@@ -701,11 +712,11 @@ function QuickReviewDrawer({
             <div className="flex items-center justify-between mt-3 bg-[#F5F0E8] rounded-xl p-3">
               <div>
                 <p className="text-xs text-gray-500">المجموع</p>
-                <p className="font-bold text-[#1B5E3B]">DH {order.total.toLocaleString()}</p>
+                <p className="font-bold text-[#1B5E3B]">DH {(order.total_amount || 0).toLocaleString()}</p>
               </div>
               <div className="text-left">
                 <p className="text-xs text-gray-500">التسبيق ({depositPercent}%)</p>
-                <p className="font-bold text-[#C9A84C]">DH {order.deposit.toLocaleString()}</p>
+                <p className="font-bold text-[#C9A84C]">DH {(order.deposit_amount || 0).toLocaleString()}</p>
               </div>
             </div>
           </div>
@@ -734,7 +745,7 @@ function QuickReviewDrawer({
               {order.parts.map((part) => (
                 <div key={part.id} className="bg-[#F5F0E8] rounded-xl p-3">
                   <div className="flex items-center justify-between mb-1">
-                    <span className="text-lg">{partIcons[part.part_type] || partIcons.default}</span>
+                    <span className="text-lg">{getPartIcon(part.part_type)}</span>
                     <span className="text-xs font-bold px-2 py-0.5 rounded-lg bg-white text-gray-600">
                       {getPartStatusLabel(part.status)}
                     </span>

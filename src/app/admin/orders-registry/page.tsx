@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import type { Database } from "@/types/database.types";
 import {
@@ -59,7 +59,7 @@ const C = {
 // ============================================================
 // HELPERS
 // ============================================================
-function fc(n: number) { return `${n.toLocaleString("ar-MA")} درهم`; }
+function fc(n: number) { return `${Math.round(n).toLocaleString("ar-MA")} درهم`; }
 function fd(s: string | null) {
   if (!s) return "—";
   return new Date(s).toLocaleDateString("ar-MA", { year: "numeric", month: "long", day: "numeric" });
@@ -218,7 +218,6 @@ export default function OrdersRegistryPage() {
     try {
       let orderIds: string[] | null = null;
 
-      // Product type filter: get order IDs first
       if (filters.productType) {
         const { data } = await supabase.from("order_parts").select("order_id").eq("part_type", filters.productType);
         const ids = Array.from(new Set((data || []).map((p: any) => p.order_id as string)));
@@ -226,7 +225,6 @@ export default function OrdersRegistryPage() {
         orderIds = ids;
       }
 
-      // Tailor filter: get order IDs first
       if (filters.tailorId) {
         const { data } = await supabase.from("order_parts").select("order_id").eq("tailor_id", filters.tailorId);
         const tIds = Array.from(new Set((data || []).map((p: any) => p.order_id as string)));
@@ -239,7 +237,6 @@ export default function OrdersRegistryPage() {
 
       if (orderIds) query = query.in("id", orderIds);
 
-      // Status filters
       if (filters.status.length > 0) {
         const hasArchived = filters.status.includes("archived");
         const hasCancelled = filters.status.includes("cancelled");
@@ -252,7 +249,6 @@ export default function OrdersRegistryPage() {
         if (hasActive) query = query.is("archived_at", null).is("cancelled_at", null);
       }
 
-      // Search
       if (filters.search.trim()) {
         const q = filters.search.trim();
         const num = parseInt(q);
@@ -263,18 +259,14 @@ export default function OrdersRegistryPage() {
         }
       }
 
-      // Date range
       if (filters.dateFrom) query = query.gte("created_at", filters.dateFrom + "T00:00:00");
       if (filters.dateTo) query = query.lte("created_at", filters.dateTo + "T23:59:59");
 
-      // Amount range
       if (filters.minAmount) query = query.gte("total", Number(filters.minAmount));
       if (filters.maxAmount) query = query.lte("total", Number(filters.maxAmount));
 
-      // Sort
       query = query.order(sortColumn, { ascending: sortAsc });
 
-      // Pagination
       const from = (page - 1) * pageSize;
       const to = from + pageSize - 1;
       query = query.range(from, to);
@@ -294,8 +286,8 @@ export default function OrdersRegistryPage() {
 
   // ─── Stats ───
   const stats = useMemo(() => {
-    const totalRevenue = orders.reduce((s, o) => s + (o.total || 0), 0);
-    const totalDeposit = orders.reduce((s, o) => s + (o.deposit || 0), 0);
+    const totalRevenue = orders.reduce((s, o) => s + ((o as any).total_amount || (o as any).total || 0), 0);
+    const totalDeposit = orders.reduce((s, o) => s + ((o as any).deposit_amount || (o as any).deposit || 0), 0);
     const totalRemaining = totalRevenue - totalDeposit;
     const avgOrder = orders.length > 0 ? totalRevenue / orders.length : 0;
     return { totalRevenue, totalDeposit, totalRemaining, avgOrder };
@@ -308,9 +300,9 @@ export default function OrdersRegistryPage() {
       if (!o.customer_name) return;
       const key = o.customer_phone || o.customer_name;
       if (!debts[key]) debts[key] = { name: o.customer_name, phone: o.customer_phone || "", total: 0, deposit: 0, remaining: 0, count: 0 };
-      debts[key].total += o.total;
-      debts[key].deposit += o.deposit;
-      debts[key].remaining += (o.total - o.deposit);
+      debts[key].total += ((o as any).total_amount || (o as any).total || 0);
+      debts[key].deposit += ((o as any).deposit_amount || (o as any).deposit || 0);
+      debts[key].remaining += (((o as any).total_amount || (o as any).total || 0) - ((o as any).deposit_amount || (o as any).deposit || 0));
       debts[key].count += 1;
     });
     return Object.values(debts).sort((a, b) => b.remaining - a.remaining);
@@ -322,7 +314,7 @@ export default function OrdersRegistryPage() {
     orders.forEach((o) => {
       if (!o.created_at) return;
       const key = new Date(o.created_at).toLocaleDateString("ar-MA", { year: "numeric", month: "short" });
-      map[key] = (map[key] || 0) + (o.total || 0);
+      map[key] = (map[key] || 0) + ((o as any).total_amount || (o as any).total || 0);
     });
     return Object.entries(map).map(([label, value]) => ({ label, value })).slice(0, 12);
   }, [orders]);
@@ -446,10 +438,11 @@ export default function OrdersRegistryPage() {
     const headers = ["رقم الطلبية", "التاريخ", "الزبون", "الهاتف", "البائع", "المنتجات", "المجموع", "التسبيق", "المتبقي", "الحالة"];
     const rows = orders.map((o) => {
       const types = Array.from(new Set((o.payload as any)?.parts?.map((p: any) => partTypeLabels[p.type] || p.type) || ["—"])).join(" + ");
+      const remaining = (((o as any).total_amount || (o as any).total || 0) - ((o as any).deposit_amount || (o as any).deposit || 0));
       return [
         o.order_number, fd(o.created_at), o.customer_name || "—", o.customer_phone || "—",
         usersMap[o.created_by || ""]?.full_name || o.created_by || "—", types,
-        o.total, o.deposit, o.total - o.deposit, statusConfig[o.status]?.label || o.status,
+        (o as any).total_amount || (o as any).total || 0, (o as any).deposit_amount || (o as any).deposit || 0, remaining, statusConfig[o.status]?.label || o.status,
       ];
     });
     const csv = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
@@ -466,11 +459,11 @@ export default function OrdersRegistryPage() {
     const w = window.open("", "_blank");
     if (!w) return;
     const itemsHtml = selectedOrder.items.map((i) => `<tr><td>${i.label}</td><td>${i.kind}</td><td>${i.qty}</td><td>${i.unit_price}</td><td>${i.total}</td></tr>`).join("");
-    w.document.write(`<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="UTF-8"><title>طلبية #${selectedOrder.order_number}</title><style>body{font-family:system-ui;margin:40px;color:#1A1A1A}h1{color:#1B5E38;border-bottom:3px solid #C9A84C;padding-bottom:10px}.section{margin:20px 0;padding:15px;border:1px solid #E5E7EB;border-radius:8px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #E5E7EB;padding:8px;text-align:right}th{background:#F5F0E8}.total{font-size:1.2em;font-weight:bold;color:#1B5E38}.footer{margin-top:40px;text-align:center;color:#6B7280;font-size:.9em;border-top:1px solid #E5E7EB;padding-top:20px}</style></head><body><h1>فاتورة طلبية — El Mahboubi Salon</h1><p><strong>رقم الطلبية:</strong> ${selectedOrder.order_number}</p><p><strong>التاريخ:</strong> ${fdt(selectedOrder.created_at)}</p><p><strong>الزبون:</strong> ${selectedOrder.customer_name || "—"}</p><p><strong>الهاتف:</strong> ${selectedOrder.customer_phone || "—"}</p><p><strong>الحالة:</strong> ${statusConfig[selectedOrder.status]?.label || selectedOrder.status}</p><div class="section"><h3>البنود</h3><table><tr><th>البيان</th><th>النوع</th><th>الكمية</th><th>سعر الوحدة</th><th>المجموع</th></tr>${itemsHtml}</table></div><div class="section"><h3>الملخص المالي</h3><p class="total">المجموع الكلي: ${fc(selectedOrder.total)}</p><p>التسبيق: ${fc(selectedOrder.deposit)}</p><p>المتبقي: ${fc(selectedOrder.total - selectedOrder.deposit)}</p></div><div class="footer"><p>محل Ameublement et Déco El Mahboubi — الحنصالي، بني ملال</p><p>هذا السجل دائم ولا يُمسح</p></div></body></html>`);
+    const remaining = ((selectedOrder as any).total_amount || (selectedOrder as any).total || 0) - ((selectedOrder as any).deposit_amount || (selectedOrder as any).deposit || 0);
+    w.document.write(`<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="UTF-8"><title>طلبية #${selectedOrder.order_number}</title><style>body{font-family:system-ui;margin:40px;color:#1A1A1A}h1{color:#1B5E38;border-bottom:3px solid #C9A84C;padding-bottom:10px}.section{margin:20px 0;padding:15px;border:1px solid #E5E7EB;border-radius:8px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #E5E7EB;padding:8px;text-align:right}th{background:#F5F0E8}.total{font-size:1.2em;font-weight:bold;color:#1B5E38}.footer{margin-top:40px;text-align:center;color:#6B7280;font-size:.9em;border-top:1px solid #E5E7EB;padding-top:20px}</style></head><body><h1>فاتورة طلبية — El Mahboubi Salon</h1><p><strong>رقم الطلبية:</strong> ${selectedOrder.order_number}</p><p><strong>التاريخ:</strong> ${fdt(selectedOrder.created_at)}</p><p><strong>الزبون:</strong> ${selectedOrder.customer_name || "—"}</p><p><strong>الهاتف:</strong> ${selectedOrder.customer_phone || "—"}</p><p><strong>الحالة:</strong> ${statusConfig[selectedOrder.status]?.label || selectedOrder.status}</p><div class="section"><h3>البنود</h3><table><tr><th>البيان</th><th>النوع</th><th>الكمية</th><th>سعر الوحدة</th><th>المجموع</th></tr>${itemsHtml}</table></div><div class="section"><h3>الملخص المالي</h3><p class="total">المجموع الكلي: ${fc((selectedOrder as any).total_amount || (selectedOrder as any).total || 0)}</p><p>التسبيق: ${fc((selectedOrder as any).deposit_amount || (selectedOrder as any).deposit || 0)}</p><p>المتبقي: ${fc(remaining)}</p></div><div class="footer"><p>محل Ameublement et Déco El Mahboubi — الحنصالي، بني ملال</p><p>هذا السجل دائم ولا يُمسح</p></div></body></html>`);
     w.document.close();
     w.print();
   };
-
   // ─── RENDER ───
   return (
     <div className="min-h-screen" style={{ backgroundColor: "#FAFAF8" }} dir="rtl">
@@ -657,7 +650,9 @@ export default function OrdersRegistryPage() {
                   <th className="px-3 py-3 text-right font-bold cursor-pointer hover:opacity-70" onClick={() => toggleSort("total")} style={{ color: C.dark }}>
                     <span className="flex items-center gap-1">المجموع <ArrowUpDown size={12} /></span>
                   </th>
-                  <th className="px-3 py-3 text-right font-bold" style={{ color: C.dark }}>التسبيق</th>
+                  <th className="px-3 py-3 text-right font-bold cursor-pointer hover:opacity-70" onClick={() => toggleSort("deposit")} style={{ color: C.dark }}>
+                    <span className="flex items-center gap-1">التسبيق <ArrowUpDown size={12} /></span>
+                  </th>
                   <th className="px-3 py-3 text-right font-bold" style={{ color: C.dark }}>المتبقي</th>
                   <th className="px-3 py-3 text-right font-bold" style={{ color: C.dark }}>الحالة</th>
                   <th className="px-3 py-3 text-center font-bold" style={{ color: C.dark }}>إجراءات</th>
@@ -672,7 +667,7 @@ export default function OrdersRegistryPage() {
                   orders.map((order) => {
                     const cfg = statusConfig[order.status] || statusConfig.new;
                     const StatusIcon = cfg.icon;
-                    const remaining = (order.total || 0) - (order.deposit || 0);
+                    const remaining = ((order as any).total_amount || (order as any).total || 0) - ((order as any).deposit_amount || (order as any).deposit || 0);
                     const seller = usersMap[order.created_by || ""];
                     const isArchived = !!order.archived_at;
                     const isCancelled = !!order.cancelled_at;
@@ -689,8 +684,8 @@ export default function OrdersRegistryPage() {
                           ) : "—"}
                         </td>
                         <td className="px-3 py-3 text-xs" style={{ color: C.gray }}>{seller?.full_name || order.created_by || "—"}</td>
-                        <td className="px-3 py-3 font-bold" style={{ color: C.dark }}>{fc(order.total)}</td>
-                        <td className="px-3 py-3" style={{ color: C.gold }}>{fc(order.deposit)}</td>
+                        <td className="px-3 py-3 font-bold" style={{ color: C.dark }}>{fc((order as any).total_amount || (order as any).total || 0)}</td>
+                        <td className="px-3 py-3" style={{ color: C.gold }}>{fc((order as any).deposit_amount || (order as any).deposit || 0)}</td>
                         <td className="px-3 py-3 font-bold" style={{ color: remaining > 0 ? C.danger : C.success }}>{fc(remaining)}</td>
                         <td className="px-3 py-3">
                           <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold" style={{ backgroundColor: cfg.bg, color: cfg.text }}>
@@ -750,7 +745,6 @@ export default function OrdersRegistryPage() {
           </div>
         </div>
       </main>
-
       {/* ─── DETAIL DRAWER ─── */}
       {showDrawer && (
         <>
@@ -892,16 +886,19 @@ export default function OrdersRegistryPage() {
                       <div className="bg-white rounded-2xl p-5 border" style={{ borderColor: C.border }}>
                         <h3 className="font-bold text-sm mb-4 flex items-center gap-2" style={{ color: C.primary }}><Layers size={18} /> أجزاء الطلبية ({selectedOrder.parts.length})</h3>
                         <div className="flex flex-wrap gap-2">
-                          {selectedOrder.parts.map((part) => (
-                            <span key={part.id} className="px-3 py-1.5 rounded-lg text-xs font-bold border" style={{ backgroundColor: C.cream, borderColor: C.border, color: C.dark }}>
-                              {partTypeIcons[part.part_type] || "📦"} {part.label} — {partTypeLabels[part.part_type] || part.part_type}
-                              {part.tailor_id && tailorsMap[part.tailor_id] && <span style={{ color: C.primary }}> ({tailorsMap[part.tailor_id].full_name})</span>}
-                            </span>
-                          ))}
+                          {selectedOrder.parts.map((part) => {
+                            const partType = part.part_type || "";
+                            const tailor = part.tailor_id ? tailorsMap[part.tailor_id] : undefined;
+                            return (
+                              <span key={part.id} className="px-3 py-1.5 rounded-lg text-xs font-bold border" style={{ backgroundColor: C.cream, borderColor: C.border, color: C.dark }}>
+                                {partTypeIcons[partType] || "📦"} {part.label} — {partTypeLabels[partType] || partType}
+                                {tailor && <span style={{ color: C.primary }}> ({tailor.full_name})</span>}
+                              </span>
+                            );
+                          })}
                         </div>
                       </div>
 
-                      
                       {/* Product Images from payload */}
                       {(() => {
                         const imgs: string[] = [];
@@ -1006,7 +1003,7 @@ export default function OrdersRegistryPage() {
                                   <span className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold text-white" style={{ backgroundColor: C.info }}>{idx + 1}</span>
                                   <div>
                                     <p className="font-bold text-sm" style={{ color: C.dark }}>{item.label}</p>
-                                    <p className="text-[10px]" style={{ color: C.gray }}>{partTypeLabels[item.kind] || item.kind}</p>
+                                    <p className="text-[10px]" style={{ color: C.gray }}>{item.kind ? partTypeLabels[item.kind] || item.kind : "غير محدد"}</p>
                                   </div>
                                 </div>
                                 <div className="text-left">
@@ -1046,13 +1043,13 @@ export default function OrdersRegistryPage() {
 
                         {/* Totals */}
                         <div className="space-y-3 pt-3 border-t" style={{ borderColor: C.border }}>
-                          <div className="flex justify-between"><span className="text-sm font-bold" style={{ color: C.dark }}>المجموع الكلي</span><span className="font-bold" style={{ color: C.dark }}>{fc(selectedOrder.total)}</span></div>
-                          <div className="flex justify-between"><span className="text-sm" style={{ color: C.gray }}>التسبيق المدفوع</span><span className="font-bold" style={{ color: C.gold }}>{fc(selectedOrder.deposit)}</span></div>
-                          <div className="flex justify-between items-center p-3 rounded-xl" style={{ backgroundColor: selectedOrder.total - selectedOrder.deposit > 0 ? "#FEF2F2" : "#F0FDF4" }}>
-                            <span className="text-sm font-bold" style={{ color: selectedOrder.total - selectedOrder.deposit > 0 ? C.danger : C.success }}>
-                              {selectedOrder.total - selectedOrder.deposit > 0 ? "المتبقي على الزبون" : "✅ تم الدفع كاملاً"}
+                          <div className="flex justify-between"><span className="text-sm font-bold" style={{ color: C.dark }}>المجموع الكلي</span><span className="font-bold" style={{ color: C.dark }}>{fc((selectedOrder as any).total_amount || (selectedOrder as any).total || 0)}</span></div>
+                          <div className="flex justify-between"><span className="text-sm" style={{ color: C.gray }}>التسبيق المدفوع</span><span className="font-bold" style={{ color: C.gold }}>{fc((selectedOrder as any).deposit_amount || (selectedOrder as any).deposit || 0)}</span></div>
+                          <div className="flex justify-between items-center p-3 rounded-xl" style={{ backgroundColor: ((selectedOrder as any).total_amount || (selectedOrder as any).total || 0) - ((selectedOrder as any).deposit_amount || (selectedOrder as any).deposit || 0) > 0 ? "#FEF2F2" : "#F0FDF4" }}>
+                            <span className="text-sm font-bold" style={{ color: ((selectedOrder as any).total_amount || (selectedOrder as any).total || 0) - ((selectedOrder as any).deposit_amount || (selectedOrder as any).deposit || 0) > 0 ? C.danger : C.success }}>
+                              {((selectedOrder as any).total_amount || (selectedOrder as any).total || 0) - ((selectedOrder as any).deposit_amount || (selectedOrder as any).deposit || 0) > 0 ? "المتبقي على الزبون" : "✅ تم الدفع كاملاً"}
                             </span>
-                            <span className="font-bold text-lg" style={{ color: selectedOrder.total - selectedOrder.deposit > 0 ? C.danger : C.success }}>{fc(Math.abs(selectedOrder.total - selectedOrder.deposit))}</span>
+                            <span className="font-bold text-lg" style={{ color: ((selectedOrder as any).total_amount || (selectedOrder as any).total || 0) - ((selectedOrder as any).deposit_amount || (selectedOrder as any).deposit || 0) > 0 ? C.danger : C.success }}>{fc(Math.abs(((selectedOrder as any).total_amount || (selectedOrder as any).total || 0) - ((selectedOrder as any).deposit_amount || (selectedOrder as any).deposit || 0)))}</span>
                           </div>
                         </div>
                       </div>
@@ -1061,7 +1058,7 @@ export default function OrdersRegistryPage() {
                       <div className="bg-white rounded-2xl p-5 border" style={{ borderColor: C.border }}>
                         <h3 className="font-bold text-sm mb-4 flex items-center gap-2" style={{ color: C.primary }}><TrendingUp size={18} /> تقدير الربح الصافي</h3>
                         <div className="space-y-2 text-sm">
-                          <div className="flex justify-between"><span style={{ color: C.gray }}>إيرادات البيع</span><span className="font-bold" style={{ color: C.dark }}>{fc(selectedOrder.total)}</span></div>
+                          <div className="flex justify-between"><span style={{ color: C.gray }}>إيرادات البيع</span><span className="font-bold" style={{ color: C.dark }}>{fc((selectedOrder as any).total_amount || (selectedOrder as any).total || 0)}</span></div>
                           <div className="flex justify-between"><span style={{ color: C.gray }}>− تكلفة القماش (تقديرية)</span><span className="font-bold" style={{ color: C.danger }}>—</span></div>
                           <div className="flex justify-between"><span style={{ color: C.gray }}>− أجر الخياط (تقديري)</span><span className="font-bold" style={{ color: C.danger }}>—</span></div>
                           <div className="flex justify-between"><span style={{ color: C.gray }}>− تكاليف أخرى</span><span className="font-bold" style={{ color: C.danger }}>—</span></div>

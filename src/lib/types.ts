@@ -7,40 +7,83 @@ export interface FabricItem {
   gallery: string[] | null;
 }
 
-export type JunctionType = 'formaja' | 'insert' | 'wooden_box' | 'none';
-
+/* ─── السداري ─── */
 export interface Seddari {
   id: string;
+  type?: "normal" | "formaja";  // ← جديد: تمييز السداري العادي عن الفورمجة
   length: number;      // cm
   width: number;       // cm - افتراضي 70
   height: number;      // cm - 20/30/50
-  junction: JunctionType;
-  insertDirection?: 'into_next' | 'from_next';
-  x?: number;
-  y?: number;
-  angle?: number;
+  fabricConsumption: number; // استهلاك الثوب بالسم
+  hasFormaja: boolean; // هل يوجد فورمجة؟
 }
 
-/* ─── خياطة السداري (المرحلة 3) ─── */
+/* ─── شكل خياطة (من قاعدة البيانات أو يدوي) ─── */
+export interface DecorShape {
+  id: string;
+  name: string;
+  image_url: string | null;
+  isCustom?: boolean;
+}
+
+export interface StitchStyle {
+  id: string;
+  name: string;
+  price: number;
+  image_url: string | null;
+  gallery: string[] | null;
+  description: string | null;
+  isCustom?: boolean;  // ← جديد: شكل يدوي مخصص للطلبية
+}
+
+/* ─── خياطة السداري ─── */
 export interface SedariStitchSelection {
   seddariId: string;
   styleId: string;
   styleName: string;
-  price: number;
+  basePrice: number;    // السعر الأساسي من الكتالوج
+  finalPrice: number;   // السعر النهائي (يمكن تعديله للزبون)
+  imageUrl: string | null;
 }
 
-export interface CushionPlan {
+/* ─── الفورمة للسداري ─── */
+export interface SedariFormaja {
   seddariId: string;
-  size: number;        // 75 | 80 | 100
-  count: number;
-  stitchPrice: number;
-  stuffing: boolean;
+  enabled: boolean;
+  price: number;        // ثمن الفورمة
+  finalPrice: number;   // السعر النهائي (يمكن تعديله)
 }
 
-export interface DecorCushionPlan {
-  shape: string;
-  count: number;
+/* ─── المخدة (تخصيص فردي) ─── */
+export interface CushionItem {
+  id: string;
+  seddariId: string;      // لأي سداري تنتمي؟
+  size: number;           // 75 | 80 | 100
+  count: number;          // عدد المخاد
+  fabricConsumption: number; // استهلاك الثوب لكل مخدة بالسم
+  stitchStyleId: string;  // شكل الخياطة
+  stitchStyleName: string;
+  stitchPrice: number;    // ثمن خياطة كل مخدة
+  stitchFinalPrice: number; // السعر النهائي بعد التعديل
+  hasLwata: boolean;      // هل يوجد لواط؟
+  lwataPrice: number;     // ثمن اللواط لكل مخدة (افتراضي 110)
+  hasFormaja: boolean;    // هل يوجد فورمجة؟
+  formajaPrice: number;   // ثمن الفورمة لكل مخدة
+}
+
+/* ─── مخدة الكيدور ─── */
+export interface DecorCushionItem {
+  id: string;
+  shapeId: string;
+  shapeName: string;
+  shapeImage: string | null;
+  fabricConsumption: number; // استهلاك الثوب بالسم
+  stitchStyleId: string;
+  stitchStyleName: string;
+  stitchStyleImage: string | null;
   stitchPrice: number;
+  stitchFinalPrice: number;
+  count: number;
 }
 
 export interface ExtraLine {
@@ -107,59 +150,37 @@ export interface StageOverrides {
 }
 
 /* ═══════════════════════════════════════
-   OrderDraft — consolidated & fixed
+   OrderDraft
    ═══════════════════════════════════════ */
 export interface OrderDraft {
-  // المرحلة 1 & 2
+  // المرحلة 1
   fabric: FabricItem | null;
+
+  // المرحلة 2 — السدادر
   seddars: Seddari[];
-  drawingPng: string | null;
+  seddarsFabricTotalOverride: number | null;
 
-  // المرحلة 3 — تفصيلي (flow)
-  sedariStitches?: SedariStitchSelection[];
-  stage3Total?: number;
-  stage3TotalOverride?: number | null;
+  // المرحلة 3 — خياطة السدادر
+  sedariStitches: SedariStitchSelection[];
+  sedariFormajas: SedariFormaja[];
+  stage3TotalOverride: number | null;
 
-  // المرحلة 3 — مبسّط (cart)
-  stitchConfig?: {
-    type: string;
-    price: number;
-  };
+  // المرحلة 4 — المخاد
+  cushionItems: CushionItem[];
+  stage4TotalOverride: number | null;
+  stage4FabricOverride: number | null; // تعديل استهلاك الثوب
 
-  // المرحلة 4 — تفصيلي (flow)
-  cushions: CushionPlan[];
+  // المرحلة 5 — مخاد الكيدور
+  decorItems: DecorCushionItem[];
+  stage5TotalOverride: number | null;
 
-  // المرحلة 4 — مبسّط (cart)
-  cushionsConfig?: {
-    totalCm: number;
-    count: number;
-    unitPrice: number;
-  };
-
-  // المرحلة 5 — تفصيلي (flow)
-  decorCushions: DecorCushionPlan[];
-  decorItems?: any[];
-  decorTotalOverride?: number | null;
-
-  // المرحلة 5 — مبسّط (cart)
-  decorConfig?: {
-    price: number;
-  };
-
-  // المرحلة 6
+  // المرحلة 6 — الإضافات
   extras: ExtraLine[];
-  extrasStage?: ExtrasStageData;
-
-  // الفورماج (cart)
-  formage?: {
-    corners: number;
-    pricePerCorner: number;
-  };
+  extrasStage: ExtrasStageData | null;
 
   // الإجماليات
-  stageTotals?: StageTotals;
+  stageTotals: StageTotals;
   totalOverride: number | null;
-  manualTotal?: number;           // ← alias for cart mode
   deposit: number;
 
   // العميل
@@ -170,20 +191,35 @@ export interface OrderDraft {
   specialDiscount?: number;
   summaryViewMode?: 'detailed' | 'compact';
   discount?: number;
+
+  // ← جديد: أشكال خياطة يدوية مخصصة للطلبية
+  customStitchStyles?: StitchStyle[];
+  customCushionStyles?: StitchStyle[];
+  customDecorStyles?: StitchStyle[];
+  customDecorShapes?: DecorShape[];
 }
 
 export const emptyDraft = (): OrderDraft => ({
   fabric: null,
   seddars: [],
-  drawingPng: null,
+  seddarsFabricTotalOverride: null,
   sedariStitches: [],
-  stage3Total: 0,
+  sedariFormajas: [],
   stage3TotalOverride: null,
-  cushions: [],
-  decorCushions: [],
+  cushionItems: [],
+  stage4TotalOverride: null,
+  stage4FabricOverride: null,
+  decorItems: [],
+  stage5TotalOverride: null,
   extras: [],
+  extrasStage: null,
   stageTotals: { fabric: 0, seddars: 0, stitch: 0, cushions: 0, decor: 0, extras: 0 },
   totalOverride: null,
   deposit: 0,
-  customer: { name: '', phone: '', deliveryDate: '', notes: '' }
+  customer: { name: '', phone: '', deliveryDate: '', notes: '' },
+  // ← جديد
+  customStitchStyles: [],
+  customCushionStyles: [],
+  customDecorStyles: [],
+  customDecorShapes: [],
 });

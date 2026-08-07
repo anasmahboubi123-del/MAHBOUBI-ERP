@@ -1,65 +1,140 @@
 /* ═══════════════════════════════════════════════════════════════
-   BUILDER: Salon (صالون مغربي) — FIXED with flexible types
+   BUILDER: Salon (صالون مغربي) — UPDATED for new flow
    ═══════════════════════════════════════════════════════════════ */
 
 import { ProductResult } from '../types';
 
+// ─── أنواع بيانات الصالون المحدَّثة ───
+
+export interface FabricItem {
+  id: string;
+  name: string;
+  color?: string | null;
+  price_per_meter: number;
+  image_url?: string | null;
+}
+
+export interface Seddari {
+  id: string;
+  type?: "normal" | "formaja";
+  length: number;
+  width: number;
+  height: number;
+  fabricConsumption: number;
+  hasFormaja: boolean;
+}
+
+export interface StitchStyle {
+  id: string;
+  name: string;
+  price: number;
+  image_url?: string | null;
+  isCustom?: boolean;
+}
+
+export interface SedariStitchSelection {
+  seddariId: string;
+  styleId: string;
+  styleName: string;
+  basePrice: number;
+  finalPrice: number;
+  imageUrl?: string | null;
+}
+
+export interface CushionItem {
+  id: string;
+  seddariId: string;
+  size: number;
+  count: number;
+  fabricConsumption: number;
+  stitchStyleId: string;
+  stitchStyleName: string;
+  stitchPrice: number;
+  stitchFinalPrice: number;
+  hasLwata: boolean;
+  lwataPrice: number;
+}
+
+export interface DecorShape {
+  id: string;
+  name: string;
+  image_url?: string | null;
+  isCustom?: boolean;
+}
+
+export interface DecorCushionItem {
+  id: string;
+  shapeId: string;
+  shapeName: string;
+  shapeImage?: string | null;
+  stitchStyleId: string;
+  stitchStyleName: string;
+  stitchStyleImage?: string | null;
+  stitchPrice: number;
+  stitchFinalPrice: number;
+  count: number;
+}
+
+export interface LhayefSelection {
+  enabled: boolean;
+  lengthM: number;
+  pricePerMeter: number;
+  totalOverride?: number | null;
+}
+
+export interface TabouriaSelection {
+  enabled: boolean;
+  count: number;
+  unitPrice: number;
+  totalOverride?: number | null;
+}
+
+export interface ExtrasStageData {
+  lhayef: LhayefSelection;
+  tabouria: TabouriaSelection;
+}
+
+export interface StageTotals {
+  fabric?: number;
+  seddars?: number;
+  stitch?: number;
+  cushions?: number;
+  decor?: number;
+  extras?: number;
+}
+
 export interface SalonDraft {
-  // Fabric selection
-  selectedFabric?: {
-    id: string | number;
-    name: string;
-    price_per_meter?: number;
-    image_url?: string;
-  } | null;
+  // المرحلة 1: الثوب
+  selectedFabric?: FabricItem | null;
 
-  // Seddars
-  seddars?: Array<{
-    lengthCm?: number;
-    length?: number;
-    widthCm?: number;
-    heightCm?: number;
-    price?: number;
-  }>;
+  // المرحلة 2: السدادر (عادية + فورمجة)
+  seddars?: Seddari[];
+  seddarsFabricTotalOverride?: number | null;
 
-  // Stitch
-  selectedStitch?: {
-    id: string | number;
-    name: string;
-    price?: number;
-  } | null;
+  // المرحلة 3: خياطة السدادر
+  sedariStitches?: SedariStitchSelection[];
+  stage3TotalOverride?: number | null;
 
-  // Cushions
-  cushions?: {
-    enabled: boolean;
-    count?: number;
-    totalPrice?: number;
-  };
+  // المرحلة 4: المخاد
+  cushionItems?: CushionItem[];
+  stage4TotalOverride?: number | null;
+  stage4FabricOverride?: number | null;
 
-  // Decor
-  decor?: {
-    enabled: boolean;
-    type?: string;
-    price?: number;
-  };
+  // المرحلة 5: الكيدور
+  decorItems?: DecorCushionItem[];
+  stage5TotalOverride?: number | null;
 
-  // Extras
-  extras?: Array<{
-    name: string;
-    enabled?: boolean;
-    price?: number;
-    lengthM?: number;
-    qty?: number;
-  }>;
+  // المرحلة 6: الإضافات (لحايف + طابورية فقط)
+  extrasStage?: ExtrasStageData | null;
 
-  // Formage
-  formage?: {
-    enabled: boolean;
-    corners?: number;
-    price?: number;
-  };
+  // أشكال يدوية مخصصة
+  customStitchStyles?: StitchStyle[];
+  customCushionStyles?: StitchStyle[];
+  customDecorStyles?: StitchStyle[];
+  customDecorShapes?: DecorShape[];
 
-  // Totals from flow
+  // الإجماليات
+  stageTotals?: StageTotals;
   calculatedTotal?: number;
   priceOverride?: {
     value: number;
@@ -68,85 +143,133 @@ export interface SalonDraft {
   notes?: string;
 }
 
-export function calcSeddariFabricLength(lengthCm: number, widthCm: number, heightCm: number): number {
-  // Standard formula: (length + width) * 2 + height * 2, all in meters
-  const l = (lengthCm || 0) / 100;
-  const w = (widthCm || 0) / 100;
-  const h = (heightCm || 0) / 100;
-  return parseFloat(((l + w) * 2 + h * 2).toFixed(2));
+// ─── دوال المساعدة ───
+
+export function calcSeddariFabricLength(lengthCm: number, heightCm: number, hasFormaja: boolean): number {
+  // ✅ المعادلة الصحيحة: الطول + (2 × الارتفاع)
+  let base = lengthCm + (2 * heightCm);
+  if (hasFormaja) base += 250; // +250 سم إذا فورمجة
+  return Math.ceil(base);
 }
 
-export function roundCushions(count: number): number {
-  if (count <= 0) return 0;
-  if (count <= 2) return 2;
-  if (count <= 4) return 4;
-  if (count <= 6) return 6;
-  return Math.ceil(count / 2) * 2;
+export function calcCushionCount(seddariLength: number, cushionSize: number): number {
+  return Math.round(seddariLength / cushionSize);
 }
+
+export function calcCushionItemTotal(item: CushionItem): number {
+  const stitchCost = item.count * item.stitchFinalPrice;
+  const lwataCost = item.hasLwata ? item.count * item.lwataPrice : 0;
+  return stitchCost + lwataCost;
+}
+
+export function calcDecorItemTotal(item: DecorCushionItem): number {
+  // ✅ الكيدور بالقطعة فقط
+  return item.count * item.stitchFinalPrice;
+}
+
+// ─── بناء عنصر السلة ───
 
 export function buildSalonCartItem(draft: SalonDraft): ProductResult {
-  const totalPrice = draft.priceOverride?.value ?? (draft.calculatedTotal || 0);
+  const fabric = draft.selectedFabric;
+  const seddars = draft.seddars || [];
+  const stitches = draft.sedariStitches || [];
+  const cushions = draft.cushionItems || [];
+  const decor = draft.decorItems || [];
+  const extras = draft.extrasStage;
 
+  // حسابات
+  const seddarsFabricTotal = draft.seddarsFabricTotalOverride ?? seddars.reduce((sum, s) => sum + s.fabricConsumption, 0);
+  const fabricCost = fabric ? (seddarsFabricTotal / 100) * fabric.price_per_meter : 0;
+
+  const stitchTotal = draft.stage3TotalOverride ?? stitches.reduce((sum, s) => sum + s.finalPrice, 0);
+
+  const cushionsTotal = draft.stage4TotalOverride ?? cushions.reduce((sum, c) => sum + calcCushionItemTotal(c), 0);
+
+  const decorTotal = draft.stage5TotalOverride ?? decor.reduce((sum, d) => sum + calcDecorItemTotal(d), 0);
+
+  const extrasTotal = extras
+    ? (extras.lhayef?.enabled ? (extras.lhayef.totalOverride ?? (extras.lhayef.lengthM * extras.lhayef.pricePerMeter)) : 0)
+    + (extras.tabouria?.enabled ? (extras.tabouria.totalOverride ?? (extras.tabouria.count * extras.tabouria.unitPrice)) : 0)
+    : 0;
+
+  const calculatedTotal = fabricCost + stitchTotal + cushionsTotal + decorTotal + extrasTotal;
+  const totalPrice = draft.priceOverride?.value ?? calculatedTotal;
+
+  // تفاصيل
   const details: Record<string, any> = {};
 
-  if (draft.selectedFabric) {
+  if (fabric) {
     details.fabric = {
-      id: String(draft.selectedFabric.id),
-      name: draft.selectedFabric.name,
-      pricePerMeter: draft.selectedFabric.price_per_meter,
+      id: fabric.id,
+      name: fabric.name,
+      pricePerMeter: fabric.price_per_meter,
+      consumptionMeters: (seddarsFabricTotal / 100).toFixed(2),
     };
   }
 
-  if (draft.seddars && draft.seddars.length > 0) {
-    details.seddari = draft.seddars.map(s => ({
-      lengthCm: s.lengthCm ?? s.length ?? 0,
-      widthCm: s.widthCm ?? 70,
-      heightCm: s.heightCm ?? 30,
-      price: s.price ?? 0,
+  if (seddars.length > 0) {
+    details.seddari = seddars.map(s => ({
+      type: s.type || "normal",
+      length: s.length,
+      width: s.width,
+      height: s.height,
+      fabricConsumptionCm: s.fabricConsumption,
+      isFormaja: s.type === "formaja",
     }));
   }
 
-  if (draft.selectedStitch) {
-    details.stitch = {
-      id: String(draft.selectedStitch.id),
-      name: draft.selectedStitch.name,
-      price: draft.selectedStitch.price,
-    };
+  if (stitches.length > 0) {
+    details.stitch = stitches.map(s => ({
+      seddariId: s.seddariId,
+      styleName: s.styleName,
+      basePrice: s.basePrice,
+      finalPrice: s.finalPrice,
+    }));
   }
 
-  // Cushions — only if enabled
-  if (draft.cushions?.enabled) {
-    details.cushions = {
-      enabled: true,
-      count: draft.cushions.count || 0,
-      totalPrice: draft.cushions.totalPrice || 0,
-    };
+  if (cushions.length > 0) {
+    details.cushions = cushions.map(c => ({
+      size: c.size,
+      count: c.count,
+      stitchStyle: c.stitchStyleName,
+      stitchPrice: c.stitchFinalPrice,
+      hasLwata: c.hasLwata,
+      lwataPrice: c.lwataPrice,
+      total: calcCushionItemTotal(c),
+    }));
   }
 
-  // Decor — only if enabled
-  if (draft.decor?.enabled) {
-    details.decor = {
-      enabled: true,
-      type: draft.decor.type || '',
-      price: draft.decor.price || 0,
-    };
+  if (decor.length > 0) {
+    details.decor = decor.map(d => ({
+      shape: d.shapeName,
+      count: d.count,
+      stitchStyle: d.stitchStyleName,
+      stitchPrice: d.stitchFinalPrice,
+      total: calcDecorItemTotal(d),
+    }));
   }
 
-  // Extras — only enabled ones
-  if (draft.extras && draft.extras.length > 0) {
-    const enabledExtras = draft.extras.filter(ex => ex.enabled !== false);
+  if (extras) {
+    const enabledExtras: any[] = [];
+    if (extras.lhayef?.enabled) {
+      enabledExtras.push({
+        name: "اللحايف",
+        lengthM: extras.lhayef.lengthM,
+        pricePerMeter: extras.lhayef.pricePerMeter,
+        total: extras.lhayef.totalOverride ?? (extras.lhayef.lengthM * extras.lhayef.pricePerMeter),
+      });
+    }
+    if (extras.tabouria?.enabled) {
+      enabledExtras.push({
+        name: "الطابورية",
+        count: extras.tabouria.count,
+        unitPrice: extras.tabouria.unitPrice,
+        total: extras.tabouria.totalOverride ?? (extras.tabouria.count * extras.tabouria.unitPrice),
+      });
+    }
     if (enabledExtras.length > 0) {
       details.extras = enabledExtras;
     }
-  }
-
-  // Formage — only if enabled
-  if (draft.formage?.enabled && (draft.formage.corners || 0) > 0) {
-    details.formage = {
-      enabled: true,
-      corners: draft.formage.corners,
-      price: draft.formage.price,
-    };
   }
 
   if (draft.notes) {
@@ -154,7 +277,12 @@ export function buildSalonCartItem(draft: SalonDraft): ProductResult {
   }
 
   const calculations: Record<string, any> = {
-    subtotal: draft.calculatedTotal || totalPrice,
+    fabricCost: fabricCost.toFixed(2),
+    stitchTotal,
+    cushionsTotal,
+    decorTotal,
+    extrasTotal,
+    subtotal: calculatedTotal.toFixed(2),
     finalTotal: totalPrice,
   };
 
@@ -165,8 +293,8 @@ export function buildSalonCartItem(draft: SalonDraft): ProductResult {
   return {
     id: 'salon-' + Date.now(),
     productType: 'salon',
-    productName: `صالون مغربي — ${draft.selectedFabric?.name || ''}`,
-    thumbnailUrl: draft.selectedFabric?.image_url,
+    productName: `صالون مغربي — ${fabric?.name || 'بدون ثوب'}`,
+    thumbnailUrl: fabric?.image_url ?? undefined,
     quantity: 1,
     unitPrice: totalPrice,
     totalPrice: totalPrice,

@@ -8,6 +8,9 @@ export type ProductType = 'salon' | 'khamiya' | 'wood' | 'foam' | 'tapis' | 'acc
 // ─── Document Types ───
 export type DocumentType = 'devis' | 'bon_de_commande' | 'facture';
 
+// ─── Document Language ───
+export type DocumentLanguage = 'ar' | 'fr' | 'es' | 'it' | 'bilingual';
+
 // ─── Customer ───
 export interface Customer {
   id?: string;
@@ -86,7 +89,7 @@ export interface CartState {
 export interface PrintOptions {
   documentType: DocumentType;
   printVariant: 'client' | 'workshop' | 'admin';
-  language: 'ar' | 'fr' | 'es' | 'bilingual';
+  language: DocumentLanguage;
   includeProductionDetails: boolean;
   includePrices: boolean;
   includeCosts: boolean;
