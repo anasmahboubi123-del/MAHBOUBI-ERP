@@ -10,17 +10,19 @@ import { getPublicImageUrl, ALBUM_CATEGORIES, AlbumCategory } from '@/lib/supaba
 import { Skeleton } from '@/components/seller/SkeletonLoaders';
 
 interface AlbumSectionProps {
-  items: AlbumItem[];
+  items?: AlbumItem[]; // ← جعلناها optional
   loading?: boolean;
 }
 
-export default function AlbumSection({ items, loading }: AlbumSectionProps) {
+export default function AlbumSection({ items = [], loading }: AlbumSectionProps) {
   const [selectedCategory, setSelectedCategory] = useState<AlbumCategory | null>(null);
   const [selectedImage, setSelectedImage] = useState<AlbumItem | null>(null);
 
+  const safeItems = items || []; // ← تأمين إضافي
+
   const filteredItems = selectedCategory
-    ? items.filter((item) => item.category === selectedCategory)
-    : items;
+    ? safeItems.filter((item) => item.category === selectedCategory)
+    : safeItems;
 
   if (loading) {
     return (
@@ -40,7 +42,7 @@ export default function AlbumSection({ items, loading }: AlbumSectionProps) {
     );
   }
 
-  if (items.length === 0) {
+  if (safeItems.length === 0) {
     return (
       <section>
         <div className="flex items-center gap-2 mb-4">
@@ -120,7 +122,7 @@ export default function AlbumSection({ items, loading }: AlbumSectionProps) {
                   {imageUrl ? (
                     <Image
                       src={imageUrl}
-                      alt={item.title}
+                      alt={item.title || ''}
                       fill
                       className="object-cover transition-transform duration-700 group-hover:scale-110"
                       sizes="(max-width: 640px) 50vw, 20vw"
@@ -132,9 +134,9 @@ export default function AlbumSection({ items, loading }: AlbumSectionProps) {
                 </div>
 
                 <div className="absolute bottom-0 inset-x-0 p-3">
-                  <h4 className="font-bold text-white text-xs truncate">{item.title}</h4>
+                  <h4 className="font-bold text-white text-xs truncate">{item.title || 'بدون عنوان'}</h4>
                   <p className="text-[#C9A84C] text-xs font-semibold mt-0.5">
-                    {item.price.toLocaleString('ar-MA')} د.م
+                    {(item.price ?? 0).toLocaleString('ar-MA')} د.م
                   </p>
                 </div>
 
@@ -174,20 +176,20 @@ export default function AlbumSection({ items, loading }: AlbumSectionProps) {
             >
               {(() => {
                 const imageUrl = getPublicImageUrl('seller-album', selectedImage.image_url);
-                return imageUrl && (
+                return imageUrl ? (
                   <Image
                     src={imageUrl}
-                    alt={selectedImage.title}
+                    alt={selectedImage.title || ''}
                     width={600}
                     height={400}
                     className="w-full rounded-2xl"
                   />
-                );
+                ) : null;
               })()}
               <div className="absolute bottom-0 inset-x-0 p-4 bg-gradient-to-t from-black/80 to-transparent rounded-b-2xl">
-                <h3 className="font-bold text-white">{selectedImage.title}</h3>
+                <h3 className="font-bold text-white">{selectedImage.title || 'بدون عنوان'}</h3>
                 <p className="text-[#C9A84C] font-semibold">
-                  {selectedImage.price.toLocaleString('ar-MA')} د.م
+                  {(selectedImage.price ?? 0).toLocaleString('ar-MA')} د.م
                 </p>
                 {selectedImage.category && (
                   <span className="text-white/70 text-xs mt-1 inline-block">
