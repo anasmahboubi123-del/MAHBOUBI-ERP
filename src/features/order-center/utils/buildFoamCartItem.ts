@@ -1,84 +1,96 @@
 /* ═══════════════════════════════════════════════════════════════
-   BUILDER: Foam (بونج) — FIXED
+   BUILDER: Foam (بونج) — بدون شكل، ارتفاع أولاً ثم منتج
    ═══════════════════════════════════════════════════════════════ */
 
 import { ProductResult } from '../types';
+import type { FoamProduct, FoamProductHeight } from '@/types/foam-types';
 
 export interface FoamDraft {
-  selectedProduct: {
-    id: string | number;
-    name: string;
-    price_per_meter: number;
-    image_url?: string;
-    square_corner_price?: number;
-    triangle_corner_price?: number;
-  };
+  selectedProduct: FoamProduct;
   selectedHeight: number;
+  selectedHeightRecord: FoamProductHeight | null;
   widthCm: number;
   seddars: number[];
-  hasCorners: boolean | null;
+  hasCorners: boolean;
   squareCorners: number;
   triangleCorners: number;
   priceAdjustment?: {
+    type: 'discount' | 'increase';
     value: number;
     reason: string;
   };
-  customPricePerMeter?: number;   // ← NEW: override price from height
+  customPricePerMeter?: number;
   notes?: string;
 }
 
 export function buildFoamCartItem(draft: FoamDraft): ProductResult {
-  // Use custom price if provided, otherwise fall back to product default
-  const productPrice = draft.customPricePerMeter ?? draft.selectedProduct.price_per_meter ?? 0;
+  // السعر الفعلي: معدّل يدوياً → سجل الارتفاع → 0
+  const productPrice = draft.customPricePerMeter
+    ?? draft.selectedHeightRecord?.price_per_meter
+    ?? 0;
+
+  const squareCornerPrice = draft.selectedHeightRecord?.square_corner_price ?? 0;
+  const triangleCornerPrice = draft.selectedHeightRecord?.triangle_corner_price ?? 0;
+
   const heightM = draft.selectedHeight / 100;
 
-  // Calculate seddars cost
+  // حساب السدادر
   const seddarsCost = draft.seddars.reduce((sum, lenM) => {
     return sum + (lenM * productPrice * heightM);
   }, 0);
 
-  // Calculate corners cost
+  // حساب الفورمجة
   let cornersCost = 0;
   if (draft.hasCorners) {
-    cornersCost += (draft.squareCorners || 0) * (draft.selectedProduct.square_corner_price || 0);
-    cornersCost += (draft.triangleCorners || 0) * (draft.selectedProduct.triangle_corner_price || 0);
+    cornersCost += (draft.squareCorners || 0) * squareCornerPrice;
+    cornersCost += (draft.triangleCorners || 0) * triangleCornerPrice;
   }
 
   const calculatedTotal = seddarsCost + cornersCost;
-  const displayTotal = draft.priceAdjustment?.value ?? calculatedTotal;
+
+  // تطبيق التعديل (خصم/زيادة)
+  let finalTotal = calculatedTotal;
+  if (draft.priceAdjustment) {
+    if (draft.priceAdjustment.type === 'discount') {
+      finalTotal = Math.max(0, calculatedTotal - draft.priceAdjustment.value);
+    } else {
+      finalTotal = calculatedTotal + draft.priceAdjustment.value;
+    }
+  }
 
   // Build details
   const details: Record<string, any> = {
     product: {
       id: String(draft.selectedProduct.id),
       name: draft.selectedProduct.name,
-      pricePerMeter: productPrice,          // ← save actual price used
-      defaultPricePerMeter: draft.selectedProduct.price_per_meter, // ← for reference
+      pricePerMeter: productPrice,
+      defaultPricePerMeter: draft.selectedHeightRecord?.price_per_meter ?? null,
     },
     heightCm: draft.selectedHeight,
     widthCm: draft.widthCm,
     foamSeddars: draft.seddars,
+    heightRecord: draft.selectedHeightRecord ? {
+      id: draft.selectedHeightRecord.id,
+      price_per_meter: draft.selectedHeightRecord.price_per_meter,
+      square_corner_price: draft.selectedHeightRecord.square_corner_price,
+      triangle_corner_price: draft.selectedHeightRecord.triangle_corner_price,
+    } : null,
   };
 
-  // Only add corners if enabled
   if (draft.hasCorners) {
-    if (draft.squareCorners > 0) {
-      details.squareCorners = draft.squareCorners;
-    }
-    if (draft.triangleCorners > 0) {
-      details.triangleCorners = draft.triangleCorners;
-    }
+    if (draft.squareCorners > 0) details.squareCorners = draft.squareCorners;
+    if (draft.triangleCorners > 0) details.triangleCorners = draft.triangleCorners;
   }
 
-  if (draft.notes) {
-    details.notes = draft.notes;
-  }
+  if (draft.notes) details.notes = draft.notes;
 
   const calculations: Record<string, any> = {
     subtotal: calculatedTotal,
     materialCost: seddarsCost,
     formageCost: cornersCost,
-    finalTotal: displayTotal,
+    finalTotal: finalTotal,
+    squareCornerPrice,
+    triangleCornerPrice,
   };
 
   if (draft.priceAdjustment) {
@@ -95,8 +107,8 @@ export function buildFoamCartItem(draft: FoamDraft): ProductResult {
     productName: `بونج — ${draft.selectedProduct.name} (${draft.selectedHeight} سم)`,
     thumbnailUrl: draft.selectedProduct.image_url,
     quantity: 1,
-    unitPrice: displayTotal,
-    totalPrice: displayTotal,
+    unitPrice: finalTotal,
+    totalPrice: finalTotal,
     details,
     calculations,
     addedAt: new Date().toISOString(),

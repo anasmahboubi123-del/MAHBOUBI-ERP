@@ -1,11 +1,12 @@
 // ============================================================
-// El Mahboubi Salon ERP — Foam (Bounj) Module Supabase Library
+// El Mahboubi ERP — Foam Module Supabase Library
+// بدون Shape — ارتفاع → منتج → سعر
 // ============================================================
 
 import { createClient } from '@supabase/supabase-js';
 import type {
   FoamProduct, FoamProductHeight, FoamOrder, FoamOrderSeddar,
-  Supplier, AuditLog, FoamSettings
+  Supplier, AuditLog, FoamSettings, FoamPriceCalc
 } from '../types/foam-types';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -38,49 +39,16 @@ export async function getDefaultSupplier(): Promise<Supplier | null> {
   return data;
 }
 
-export async function createSupplier(
-  supplier: Omit<Supplier, 'id' | 'created_at' | 'updated_at'>
-): Promise<Supplier> {
-  const { data, error } = await supabase
-    .from('suppliers')
-    .insert(supplier)
-    .select()
-    .single();
-  if (error) throw error;
-  return data;
-}
-
-export async function updateSupplier(
-  id: string,
-  updates: Partial<Supplier>
-): Promise<Supplier> {
-  const { data, error } = await supabase
-    .from('suppliers')
-    .update(updates)
-    .eq('id', id)
-    .select()
-    .single();
-  if (error) throw error;
-  return data;
-}
-
-export async function deleteSupplier(id: string): Promise<void> {
-  const { error } = await supabase.from('suppliers').delete().eq('id', id);
-  if (error) throw error;
-}
-
 // ============================================================
 // FOAM PRODUCTS
 // ============================================================
 
 export async function getFoamProducts(withHeights = false): Promise<FoamProduct[]> {
-  let query = supabase
+  const { data, error } = await supabase
     .from('foam_products')
     .select('*')
     .eq('is_active', true)
     .order('name');
-
-  const { data, error } = await query;
   if (error) throw error;
 
   const products = data || [];
@@ -107,9 +75,12 @@ export async function getFoamProductById(id: string): Promise<FoamProduct | null
   return data;
 }
 
+// ─── Height Input (للكاتالوج) ──────────────────────────────
 export interface HeightInput {
   height_cm: number;
   price_per_meter: number;
+  square_corner_price: number;
+  triangle_corner_price: number;
 }
 
 export async function createFoamProduct(
@@ -128,6 +99,8 @@ export async function createFoamProduct(
       product_id: data.id,
       height_cm: h.height_cm,
       price_per_meter: h.price_per_meter,
+      square_corner_price: h.square_corner_price,
+      triangle_corner_price: h.triangle_corner_price,
       is_active: true
     }));
     await supabase.from('foam_product_heights').insert(heightRows);
@@ -157,6 +130,8 @@ export async function updateFoamProduct(
         product_id: id,
         height_cm: h.height_cm,
         price_per_meter: h.price_per_meter,
+        square_corner_price: h.square_corner_price,
+        triangle_corner_price: h.triangle_corner_price,
         is_active: true
       }));
       await supabase.from('foam_product_heights').insert(heightRows);
@@ -189,6 +164,26 @@ export async function getFoamProductHeights(
   return data || [];
 }
 
+// ─── Helper: جلب السعر الصحيح لـ (منتج + ارتفاع) ──────────
+export function getHeightPrice(
+  product: FoamProduct,
+  heightCm: number
+): {
+  pricePerMeter: number;
+  squareCornerPrice: number;
+  triangleCornerPrice: number;
+  heightRecord: FoamProductHeight | null;
+} {
+  const record = product.heights?.find(h => h.height_cm === heightCm) || null;
+
+  return {
+    pricePerMeter: record?.price_per_meter ?? 0,
+    squareCornerPrice: record?.square_corner_price ?? 0,
+    triangleCornerPrice: record?.triangle_corner_price ?? 0,
+    heightRecord: record,
+  };
+}
+
 // ============================================================
 // FOAM ORDERS
 // ============================================================
@@ -203,9 +198,7 @@ export async function getFoamOrders(status?: string): Promise<FoamOrder[]> {
     `)
     .order('created_at', { ascending: false });
 
-  if (status) {
-    query = query.eq('status', status);
-  }
+  if (status) query = query.eq('status', status);
 
   const { data, error } = await query;
   if (error) throw error;
@@ -239,7 +232,9 @@ export interface CreateFoamOrderInput {
   deliveryDate: string;
   notes: string;
   deposit: number;
-  pricePerMeter?: number;           // ← NEW: override price from height
+  pricePerMeter?: number;
+  squareCornerPrice?: number;
+  triangleCornerPrice?: number;
   priceAdjustment?: {
     type: 'discount' | 'increase';
     value: number;
@@ -252,26 +247,26 @@ export interface CreateFoamOrderInput {
 export async function createFoamOrder(
   input: CreateFoamOrderInput
 ): Promise<FoamOrder> {
-  // Use the provided pricePerMeter (height-specific or custom) or fall back to product default
-  const effectivePricePerMeter = input.pricePerMeter ?? input.product.price_per_meter;
+  const heightPrice = getHeightPrice(input.product, input.heightCm);
+  const effectivePricePerMeter = input.pricePerMeter ?? heightPrice.pricePerMeter;
+  const effectiveSquareCornerPrice = input.squareCornerPrice ?? heightPrice.squareCornerPrice;
+  const effectiveTriangleCornerPrice = input.triangleCornerPrice ?? heightPrice.triangleCornerPrice;
 
   const totalLength = input.seddars.reduce((sum, len) => sum + len, 0);
   const seddarsTotal = totalLength * effectivePricePerMeter;
   const squareCornersTotal = input.hasCorners
-    ? input.squareCorners * input.product.square_corner_price
+    ? input.squareCorners * effectiveSquareCornerPrice
     : 0;
   const triangleCornersTotal = input.hasCorners
-    ? input.triangleCorners * input.product.triangle_corner_price
+    ? input.triangleCorners * effectiveTriangleCornerPrice
     : 0;
   const subtotal = seddarsTotal + squareCornersTotal + triangleCornersTotal;
 
   let finalTotal = subtotal;
   if (input.priceAdjustment) {
-    if (input.priceAdjustment.type === 'discount') {
-      finalTotal = subtotal - input.priceAdjustment.value;
-    } else {
-      finalTotal = subtotal + input.priceAdjustment.value;
-    }
+    finalTotal = input.priceAdjustment.type === 'discount'
+      ? Math.max(0, subtotal - input.priceAdjustment.value)
+      : subtotal + input.priceAdjustment.value;
   }
 
   const remaining = finalTotal - input.deposit;
@@ -281,11 +276,7 @@ export async function createFoamOrder(
   );
   if (orderNumError) throw orderNumError;
 
-  const orderNumber =
-    orderNumData ||
-    `MHB-FOAM-${new Date().getFullYear()}-${String(
-      Math.floor(Math.random() * 100000)
-    ).padStart(5, '0')}`;
+  const orderNumber = orderNumData || `MHB-FOAM-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 100000)).padStart(5, '0')}`;
   const invoiceNumber = `INV-${orderNumber}`;
 
   const orderData = {
@@ -295,9 +286,9 @@ export async function createFoamOrder(
     product_name: input.product.name,
     height_cm: input.heightCm,
     width_cm: input.widthCm,
-    price_per_meter: effectivePricePerMeter,  // ← save the actual price used
-    square_corner_price: input.product.square_corner_price,
-    triangle_corner_price: input.product.triangle_corner_price,
+    price_per_meter: effectivePricePerMeter,
+    square_corner_price: effectiveSquareCornerPrice,
+    triangle_corner_price: effectiveTriangleCornerPrice,
     total_length_meters: totalLength,
     seddars_total: seddarsTotal,
     square_corners_count: input.hasCorners ? input.squareCorners : 0,
@@ -477,37 +468,6 @@ export async function getFoamSettings(): Promise<FoamSettings> {
   };
 }
 
-export async function updateFoamSettings(
-  settings: Partial<FoamSettings>
-): Promise<void> {
-  const updates = [];
-  if (settings.supplier_reminder_days !== undefined) {
-    updates.push({
-      key: 'foam_supplier_reminder_days',
-      value: String(settings.supplier_reminder_days),
-    });
-  }
-  if (settings.order_prefix !== undefined) {
-    updates.push({
-      key: 'foam_order_prefix',
-      value: settings.order_prefix,
-    });
-  }
-  if (settings.manager_pin !== undefined) {
-    updates.push({
-      key: 'foam_manager_pin',
-      value: settings.manager_pin,
-    });
-  }
-
-  for (const update of updates) {
-    const { error } = await supabase
-      .from('settings')
-      .upsert({ key: update.key, value: update.value }, { onConflict: 'key' });
-    if (error) throw error;
-  }
-}
-
 // ============================================================
 // PRICE CALCULATIONS
 // ============================================================
@@ -521,24 +481,19 @@ export function calculateFoamPrice(
   squareCornerPrice: number,
   triangleCornerPrice: number,
   adjustment?: { type: 'discount' | 'increase'; value: number } | null
-) {
+): FoamPriceCalc {
   const totalLength = seddars.reduce((sum, len) => sum + len, 0);
   const seddarsTotal = totalLength * pricePerMeter;
-  const squareCornersTotal = hasCorners
-    ? squareCorners * squareCornerPrice
-    : 0;
-  const triangleCornersTotal = hasCorners
-    ? triangleCorners * triangleCornerPrice
-    : 0;
+  const squareCornersTotal = hasCorners ? squareCorners * squareCornerPrice : 0;
+  const triangleCornersTotal = hasCorners ? triangleCorners * triangleCornerPrice : 0;
   const subtotal = seddarsTotal + squareCornersTotal + triangleCornersTotal;
 
-  let finalTotal = subtotal;
+  let adjustmentAmount = 0;
   if (adjustment) {
-    finalTotal =
-      adjustment.type === 'discount'
-        ? subtotal - adjustment.value
-        : subtotal + adjustment.value;
+    adjustmentAmount = adjustment.type === 'discount' ? -adjustment.value : adjustment.value;
   }
+
+  const finalTotal = Math.max(0, subtotal + adjustmentAmount);
 
   return {
     totalLength,
@@ -546,8 +501,8 @@ export function calculateFoamPrice(
     squareCornersTotal,
     triangleCornersTotal,
     subtotal,
+    adjustmentAmount,
     finalTotal,
-    remaining: (deposit: number) => finalTotal - deposit,
   };
 }
 
@@ -559,41 +514,27 @@ export function generateWhatsAppMessage(
   order: FoamOrder,
   supplier: Supplier
 ): string {
-  const seddarsList =
-    order.seddars
-      ?.map(s => `• ${s.length_meters.toFixed(2)} م`)
-      .join('\n') || '';
+  const seddarsList = order.seddars
+    ?.map(s => `• ${s.length_meters.toFixed(2)} م`)
+    .join('\n') || '';
 
   return `السلام عليكم،
 
 نرجو تجهيز الطلب التالي:
 
-رقم الطلب:
-${order.order_number}
-
-المنتج:
-${order.product_name}
-
-الارتفاع:
-${order.height_cm} سم
-
-العرض:
-${order.width_cm} سم
+رقم الطلب: ${order.order_number}
+المنتج: ${order.product_name}
+الارتفاع: ${order.height_cm} سم
+العرض: ${order.width_cm} سم
 
 أطوال السدادر:
 ${seddarsList}
 
-إجمالي الأطوال:
-${order.total_length_meters.toFixed(2)} متر
+إجمالي الأطوال: ${order.total_length_meters.toFixed(2)} متر
+الفورمجة المربعة: ${order.square_corners_count}
+الفورمجة المثلثة: ${order.triangle_corners_count}
 
-الفورمجة المربعة:
-${order.square_corners_count}
-
-الفورمجة المثلثة:
-${order.triangle_corners_count}
-
-تاريخ التسليم المطلوب:
-${order.delivery_date ? new Date(order.delivery_date).toLocaleDateString('ar-MA') : 'غير محدد'}
+تاريخ التسليم: ${order.delivery_date ? new Date(order.delivery_date).toLocaleDateString('ar-MA') : 'غير محدد'}
 
 المرجو تأكيد استلام الطلب.`;
 }
@@ -616,30 +557,13 @@ export function subscribeToFoamOrders(
     .on(
       'postgres_changes',
       { event: '*', schema: 'public', table: 'foam_orders' },
-      payload => {
-        callback(payload.new as FoamOrder);
-      }
-    )
-    .subscribe();
-}
-
-export function subscribeToAuditLogs(
-  callback: (log: AuditLog) => void
-) {
-  return supabase
-    .channel('audit_logs_changes')
-    .on(
-      'postgres_changes',
-      { event: 'INSERT', schema: 'public', table: 'audit_logs' },
-      payload => {
-        callback(payload.new as AuditLog);
-      }
+      payload => callback(payload.new as FoamOrder)
     )
     .subscribe();
 }
 
 // ============================================================
-// PHASE 3 — STATISTICS
+// STATISTICS
 // ============================================================
 
 export async function getFoamStats(
@@ -663,16 +587,15 @@ export async function getFoamStats(
     inProduction: orders.filter(o => o.status === 'in_production').length,
     ready: orders.filter(o => o.status === 'ready').length,
     delivered: orders.filter(o => o.status === 'delivered').length,
-    avgOrderValue:
-      orders.length > 0
-        ? orders.reduce((s, o) => s + (o.final_total || 0), 0) / orders.length
-        : 0,
+    avgOrderValue: orders.length > 0
+      ? orders.reduce((s, o) => s + (o.final_total || 0), 0) / orders.length
+      : 0,
     totalDeposit: orders.reduce((s, o) => s + (o.deposit_amount || 0), 0),
   };
 }
 
 // ============================================================
-// PHASE 3 — REMINDERS
+// REMINDERS
 // ============================================================
 
 export async function getFoamReminders(daysAhead: number = 3) {
@@ -697,56 +620,29 @@ export async function getFoamReminders(daysAhead: number = 3) {
 }
 
 // ============================================================
-// PHASE 3 — CSV EXPORT
+// CSV EXPORT
 // ============================================================
 
 export function exportFoamOrdersToCSV(orders: FoamOrder[]) {
   const headers = [
-    'رقم الطلب',
-    'الزبون',
-    'الهاتف',
-    'المنتج',
-    'الارتفاع',
-    'العرض',
-    'أطوال السدادر',
-    'إجمالي الأطوال',
-    'السعر لكل متر',
-    'السعر الأساسي',
-    'نوع التعديل',
-    'قيمة التعديل',
-    'السعر النهائي',
-    'التسبيق',
-    'المتبقي',
-    'الحالة',
-    'تاريخ التسليم',
-    'تاريخ الإنشاء',
+    'رقم الطلب', 'الزبون', 'الهاتف', 'المنتج', 'الارتفاع', 'العرض',
+    'أطوال السدادر', 'إجمالي الأطوال', 'السعر لكل متر', 'السعر الأساسي',
+    'نوع التعديل', 'قيمة التعديل', 'السعر النهائي', 'التسبيق', 'المتبقي',
+    'الحالة', 'تاريخ التسليم', 'تاريخ الإنشاء',
   ];
 
   const rows = orders.map(o => [
-    o.order_number,
-    o.customer_name,
-    o.customer_phone,
-    o.product_name || '—',
-    o.height_cm,
-    o.width_cm,
+    o.order_number, o.customer_name, o.customer_phone, o.product_name || '—',
+    o.height_cm, o.width_cm,
     o.seddars?.map(s => s.length_meters).join(';') || '—',
-    o.total_length_meters,
-    o.price_per_meter,
-    o.subtotal,
-    o.price_adjustment_type || '—',
-    o.price_adjustment_value || 0,
-    o.final_total,
-    o.deposit_amount,
-    o.remaining_amount,
-    o.status,
-    o.delivery_date || '—',
-    o.created_at,
+    o.total_length_meters, o.price_per_meter, o.subtotal,
+    o.price_adjustment_type || '—', o.price_adjustment_value || 0,
+    o.final_total, o.deposit_amount, o.remaining_amount,
+    o.status, o.delivery_date || '—', o.created_at,
   ]);
 
   const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
-  const blob = new Blob(['\uFEFF' + csv], {
-    type: 'text/csv;charset=utf-8;',
-  });
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
@@ -756,7 +652,7 @@ export function exportFoamOrdersToCSV(orders: FoamOrder[]) {
 }
 
 // ============================================================
-// PHASE 3 — DASHBOARD CHART DATA
+// DASHBOARD CHART DATA
 // ============================================================
 
 export async function getFoamSalesChartData(days: number = 30) {

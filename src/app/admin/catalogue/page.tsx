@@ -3,7 +3,10 @@
 import React, { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
-import { Plus, Trash2, Edit3, X, Check, Loader2 } from "lucide-react";
+import {
+  Plus, Trash2, Edit3, X, Check, Loader2, Ruler, DollarSign,
+  CornerDownRight, ChevronDown, ChevronUp, Package,
+} from "lucide-react";
 import Image from "next/image";
 
 /* ─── Types ─── */
@@ -23,6 +26,7 @@ interface CatalogueTab {
   bucket: string;
   fields: FieldDef[];
   fetcher: () => Promise<any[]>;
+  isFoam?: boolean; // ← خاص بالبونج
 }
 
 /* ─── Fetchers ─── */
@@ -62,10 +66,26 @@ async function fetchRembourrage() {
   return data || [];
 }
 
+// ✅ البونج: جلب المنتجات + الارتفاعات
 async function fetchFoamProducts() {
-  const { data, error } = await supabase.from("foam_products").select("*").order("name", { ascending: true });
+  const { data: products, error } = await supabase
+    .from("foam_products")
+    .select("*")
+    .eq("is_active", true)
+    .order("name");
   if (error) throw error;
-  return (data || []) as any[];
+
+  const result = [];
+  for (const product of products || []) {
+    const { data: heights } = await supabase
+      .from("foam_product_heights")
+      .select("*")
+      .eq("product_id", product.id)
+      .eq("is_active", true)
+      .order("height_cm");
+    result.push({ ...product, heights: heights || [] });
+  }
+  return result;
 }
 
 async function fetchSeddariStitches() {
@@ -107,25 +127,25 @@ async function fetchDecorShapes() {
   return (data || []).map((row) => ({ ...row, image_url: row.image_url || null }));
 }
 
-// ✅ جديد: أشكال الصالون الرومي
 async function fetchRomaniModels() {
-  const { data, error } = await supabase
-    .from("romani_models")
-    .select("*")
-    .order("name");
+  const { data, error } = await supabase.from("romani_models").select("*").order("name");
   if (error) throw error;
   return (data || []).map((row) => ({ ...row, image_url: row.image_url || null }));
 }
 
-// ✅ جديد: ألوان الصالون الرومي
 async function fetchRomaniColors() {
-  const { data, error } = await supabase
-    .from("romani_colors")
-    .select("*")
-    .order("name");
+  const { data, error } = await supabase.from("romani_colors").select("*").order("name");
   if (error) throw error;
   return (data || []).map((row) => ({ ...row, image_url: row.image_url || null }));
 }
+
+async function fetchKhamiya() {
+  const { data, error } = await supabase.from("khamiya").select("*").order("name");
+  if (error) throw error;
+  return (data || []).map((row) => ({ ...row, image_url: row.image_url || null }));
+}
+
+const HEIGHTS = [30, 50, 70];
 
 const tabs: CatalogueTab[] = [
   {
@@ -217,18 +237,17 @@ const tabs: CatalogueTab[] = [
     ],
     fetcher: fetchRembourrage,
   },
+  // ✅ البونج — معالجة خاصة
   {
     key: "foam_products",
     label: "🧽 البونج",
     table: "foam_products",
     bucket: "catalogue",
+    isFoam: true,
     fields: [
       { key: "image_url", label: "الصورة", type: "image" },
       { key: "name", label: "الاسم" },
       { key: "description", label: "الوصف" },
-      { key: "price_per_meter", label: "السعر/متر", type: "number" },
-      { key: "square_corner_price", label: "فورمجة مربع", type: "number" },
-      { key: "triangle_corner_price", label: "فورمجة مثلث", type: "number" },
       { key: "default_width_cm", label: "العرض الافتراضي (سم)", type: "number" },
       { key: "is_active", label: "نشط", type: "boolean" },
     ],
@@ -288,7 +307,6 @@ const tabs: CatalogueTab[] = [
     ],
     fetcher: fetchDecorShapes,
   },
-  // ✅ جديد: أشكال الصالون الرومي
   {
     key: "romani_models",
     label: "🛋️ أشكال الرومي",
@@ -303,7 +321,6 @@ const tabs: CatalogueTab[] = [
     ],
     fetcher: fetchRomaniModels,
   },
-  // ✅ جديد: ألوان الصالون الرومي
   {
     key: "romani_colors",
     label: "🎨 ألوان الرومي",
@@ -315,6 +332,23 @@ const tabs: CatalogueTab[] = [
       { key: "active", label: "نشط", type: "boolean" },
     ],
     fetcher: fetchRomaniColors,
+  },
+  {
+    key: "khamiya",
+    label: "🏛️ الخامية",
+    table: "khamiya",
+    bucket: "catalogue",
+    fields: [
+      { key: "image_url", label: "الصورة", type: "image" },
+      { key: "name", label: "الاسم" },
+      { key: "quality", label: "الجودة", type: "select", options: ["standard", "premium", "luxury"] },
+      { key: "price_per_m2", label: "السعر/م²", type: "number" },
+      { key: "cost_per_m2", label: "التكلفة/م²", type: "number" },
+      { key: "stock_m2", label: "المخزون (م²)", type: "number" },
+      { key: "supplier", label: "المورد" },
+      { key: "active", label: "نشط", type: "boolean" },
+    ],
+    fetcher: fetchKhamiya,
   },
 ];
 
@@ -356,6 +390,45 @@ function ImageCell({ url, alt }: { url: string | null; alt: string }) {
   );
 }
 
+// ✅ مكون عرض أسعار البونج
+function FoamPricesTable({ heights }: { heights: any[] }) {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <div className="mt-3 bg-[#F5F0E8] rounded-xl overflow-hidden border border-[#E8E4DC]">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full flex items-center justify-between px-4 py-2.5 text-sm font-bold text-[#1B5E3B] hover:bg-[#E8E4DC] transition-colors"
+      >
+        <span className="flex items-center gap-2">
+          <Ruler className="w-4 h-4" />
+          الأسعار حسب الارتفاع ({heights.length} ارتفاع)
+        </span>
+        {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+      </button>
+
+      {expanded && (
+        <div className="px-4 pb-3">
+          <div className="grid grid-cols-4 gap-2 text-xs font-bold text-[#6B7B6E] mb-1 px-2">
+            <span>الارتفاع</span>
+            <span className="flex items-center gap-1"><DollarSign className="w-3 h-3"/> سعر المتر</span>
+            <span className="flex items-center gap-1"><CornerDownRight className="w-3 h-3"/> مربعة</span>
+            <span className="flex items-center gap-1"><CornerDownRight className="w-3 h-3"/> مثلثة</span>
+          </div>
+          {heights.map((h: any) => (
+            <div key={h.height_cm} className="grid grid-cols-4 gap-2 text-sm py-1.5 px-2 border-t border-[#E8E4DC]">
+              <span className="font-bold text-[#C9A84C]">{h.height_cm} سم</span>
+              <span>{h.price_per_meter} درهم</span>
+              <span>{h.square_corner_price || 0} درهم</span>
+              <span>{h.triangle_corner_price || 0} درهم</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ─── Main Page ─── */
 export default function CataloguePage() {
   const [activeTab, setActiveTab] = useState<string>(tabs[0].key);
@@ -365,6 +438,7 @@ export default function CataloguePage() {
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState<Record<string, any>>({});
+  const [foamHeights, setFoamHeights] = useState<Record<number, any>>({});
   const [uploadingImage, setUploadingImage] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -417,6 +491,12 @@ export default function CataloguePage() {
   const handleSave = async () => {
     setSaving(true);
     try {
+      // ✅ إذا كان البونج — معالجة خاصة
+      if (currentTab.isFoam) {
+        await saveFoamProduct();
+        return;
+      }
+
       const payload: Record<string, any> = {};
 
       currentTab.fields.forEach((field) => {
@@ -474,10 +554,86 @@ export default function CataloguePage() {
     }
   };
 
+  // ✅ حفظ منتج البونج (منتج + 3 ارتفاعات)
+  const saveFoamProduct = async () => {
+    try {
+      const productPayload = {
+        name: formData.name?.trim() || null,
+        description: formData.description?.trim() || null,
+        image_url: formData.image_url || null,
+        default_width_cm: Number(formData.default_width_cm) || 70,
+        is_active: formData.is_active === true || formData.is_active === "true",
+      };
+
+      let productId = editingId;
+
+      if (editingId) {
+        const { error } = await supabase
+          .from("foam_products")
+          .update(productPayload)
+          .eq("id", editingId);
+        if (error) throw error;
+      } else {
+        const { data, error } = await supabase
+          .from("foam_products")
+          .insert(productPayload)
+          .select()
+          .single();
+        if (error) throw error;
+        productId = data.id;
+      }
+
+      // حفظ الارتفاعات
+      for (const h of HEIGHTS) {
+        const heightData = foamHeights[h] || {};
+        const heightPayload = {
+          product_id: productId,
+          height_cm: h,
+          price_per_meter: Number(heightData.price_per_meter) || 0,
+          square_corner_price: Number(heightData.square_corner_price) || 0,
+          triangle_corner_price: Number(heightData.triangle_corner_price) || 0,
+          is_active: true,
+        };
+
+        // التحقق من وجود السجل
+        const { data: existing } = await supabase
+          .from("foam_product_heights")
+          .select("id")
+          .eq("product_id", productId)
+          .eq("height_cm", h)
+          .maybeSingle();
+
+        if (existing) {
+          await supabase
+            .from("foam_product_heights")
+            .update(heightPayload)
+            .eq("id", existing.id);
+        } else {
+          await supabase.from("foam_product_heights").insert(heightPayload);
+        }
+      }
+
+      setShowForm(false);
+      setEditingId(null);
+      setFormData({});
+      setFoamHeights({});
+      loadData();
+    } catch (err: any) {
+      console.error("فشل حفظ البونج:", err);
+      alert(err?.message || "فشل الحفظ");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   /* Delete */
   const handleDelete = async (id: string) => {
     if (!confirm("هل أنت متأكد من الحذف؟")) return;
     try {
+      // ✅ إذا كان البونج — احذف الارتفاعات أيضاً
+      if (currentTab.isFoam) {
+        await supabase.from("foam_product_heights").delete().eq("product_id", id);
+      }
       const { error } = await supabase.from(currentTab.table).delete().eq("id", id);
       if (error) throw error;
       loadData();
@@ -506,6 +662,20 @@ export default function CataloguePage() {
       initial[field.key] = item[field.key] ?? "";
     });
     setFormData(initial);
+
+    // ✅ إذا كان البونج — حمّل الارتفاعات
+    if (currentTab.isFoam && item.heights) {
+      const heightsMap: Record<number, any> = {};
+      item.heights.forEach((h: any) => {
+        heightsMap[h.height_cm] = {
+          price_per_meter: String(h.price_per_meter ?? ""),
+          square_corner_price: String(h.square_corner_price ?? ""),
+          triangle_corner_price: String(h.triangle_corner_price ?? ""),
+        };
+      });
+      setFoamHeights(heightsMap);
+    }
+
     setShowForm(true);
   };
 
@@ -519,6 +689,22 @@ export default function CataloguePage() {
       else initial[field.key] = "";
     });
     setFormData(initial);
+
+    // ✅ إعداد الارتفاعات الافتراضية للبونج
+    if (currentTab.isFoam) {
+      const defaultHeights: Record<number, any> = {};
+      HEIGHTS.forEach((h) => {
+        defaultHeights[h] = {
+          price_per_meter: "",
+          square_corner_price: "",
+          triangle_corner_price: "",
+        };
+      });
+      setFoamHeights(defaultHeights);
+    } else {
+      setFoamHeights({});
+    }
+
     setShowForm(true);
   };
 
@@ -626,6 +812,11 @@ export default function CataloguePage() {
                           </div>
                         ))}
                     </div>
+
+                    {/* ✅ عرض أسعار البونج */}
+                    {currentTab.isFoam && item.heights && item.heights.length > 0 && (
+                      <FoamPricesTable heights={item.heights} />
+                    )}
                   </div>
                 </div>
 
@@ -654,16 +845,20 @@ export default function CataloguePage() {
       {/* Form Modal */}
       {showForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl border border-[#E8E4DC] max-h-[90vh] overflow-y-auto">
+          <div className={`bg-white rounded-2xl w-full shadow-2xl border border-[#E8E4DC] max-h-[90vh] overflow-y-auto ${
+            currentTab.isFoam ? 'max-w-2xl' : 'max-w-lg'
+          }`}>
             <div className="sticky top-0 bg-white border-b border-[#E8E4DC] p-4 flex items-center justify-between rounded-t-2xl">
               <h2 className="text-lg font-bold text-[#1B5E3B]">
                 {editingId ? "✏️ تعديل" : "➕ إضافة جديد"}
+                {currentTab.isFoam && " — بونج"}
               </h2>
               <button
                 onClick={() => {
                   setShowForm(false);
                   setEditingId(null);
                   setFormData({});
+                  setFoamHeights({});
                 }}
                 className="w-10 h-10 bg-[#F5F0E8] rounded-xl flex items-center justify-center text-gray-500 hover:bg-[#E8E4DC] transition"
               >
@@ -672,107 +867,121 @@ export default function CataloguePage() {
             </div>
 
             <div className="p-4 space-y-4">
-              {currentTab.fields.map((field) => (
-                <div key={field.key}>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                    {field.label}
-                  </label>
+              {/* ✅ حقول البونج + الارتفاعات */}
+              {currentTab.isFoam ? (
+                <FoamFormFields
+                  formData={formData}
+                  setFormData={setFormData}
+                  foamHeights={foamHeights}
+                  setFoamHeights={setFoamHeights}
+                  uploadingImage={uploadingImage}
+                  handleImageUpload={handleImageUpload}
+                  currentTab={currentTab}
+                />
+              ) : (
+                /* الحقول العادية */
+                currentTab.fields.map((field) => (
+                  <div key={field.key}>
+                    <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                      {field.label}
+                    </label>
 
-                  {field.type === "image" ? (
-                    <div className="space-y-2">
-                      {formData[field.key] && (
-                        <div className="w-24 h-24 rounded-lg overflow-hidden bg-gray-100 relative">
-                          <Image
-                            src={formData[field.key]}
-                            alt="معاينة"
-                            fill
-                            className="object-cover"
-                            sizes="96px"
-                          />
-                        </div>
-                      )}
-                      <label className="flex items-center justify-center w-full px-4 py-3 bg-[#F5F0E8] border-2 border-dashed border-[#E8E4DC] rounded-xl cursor-pointer hover:bg-[#E8E4DC] transition">
-                        <input
-                          type="file"
-                          accept="image/*"
-                          className="hidden"
-                          onChange={(e) => {
-                            const file = e.target.files?.[0];
-                            if (file) handleImageUpload(file);
-                          }}
-                        />
-                        {uploadingImage ? (
-                          <Loader2 className="w-5 h-5 text-[#1B5E3B] animate-spin" />
-                        ) : (
-                          <span className="text-sm text-[#6B7B6E] font-medium">
-                            📷 اختر صورة
-                          </span>
+                    {field.type === "image" ? (
+                      <div className="space-y-2">
+                        {formData[field.key] && (
+                          <div className="w-24 h-24 rounded-lg overflow-hidden bg-gray-100 relative">
+                            <Image
+                              src={formData[field.key]}
+                              alt="معاينة"
+                              fill
+                              className="object-cover"
+                              sizes="96px"
+                            />
+                          </div>
                         )}
-                      </label>
-                    </div>
-                  ) : field.type === "select" ? (
-                    <select
-                      value={String(formData[field.key] ?? "")}
-                      onChange={(e) =>
-                        setFormData((prev) => ({
-                          ...prev,
-                          [field.key]: e.target.value,
-                        }))
-                      }
-                      className="w-full px-4 py-2.5 bg-[#F5F0E8] border border-[#E8E4DC] rounded-xl text-sm outline-none focus:ring-2 focus:ring-[#C9A84C]"
-                    >
-                      <option value="">— اختر —</option>
-                      {field.options?.map((opt) => (
-                        <option key={opt} value={opt}>
-                          {opt}
-                        </option>
-                      ))}
-                    </select>
-                  ) : field.type === "boolean" ? (
-                    <label className="flex items-center gap-3 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={formData[field.key] === true || formData[field.key] === "true"}
+                        <label className="flex items-center justify-center w-full px-4 py-3 bg-[#F5F0E8] border-2 border-dashed border-[#E8E4DC] rounded-xl cursor-pointer hover:bg-[#E8E4DC] transition">
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) handleImageUpload(file);
+                            }}
+                          />
+                          {uploadingImage ? (
+                            <Loader2 className="w-5 h-5 text-[#1B5E3B] animate-spin" />
+                          ) : (
+                            <span className="text-sm text-[#6B7B6E] font-medium">
+                              📷 اختر صورة
+                            </span>
+                          )}
+                        </label>
+                      </div>
+                    ) : field.type === "select" ? (
+                      <select
+                        value={String(formData[field.key] ?? "")}
                         onChange={(e) =>
                           setFormData((prev) => ({
                             ...prev,
-                            [field.key]: e.target.checked,
+                            [field.key]: e.target.value,
                           }))
                         }
-                        className="w-5 h-5 accent-[#1B5E3B] rounded"
+                        className="w-full px-4 py-2.5 bg-[#F5F0E8] border border-[#E8E4DC] rounded-xl text-sm outline-none focus:ring-2 focus:ring-[#C9A84C]"
+                      >
+                        <option value="">— اختر —</option>
+                        {field.options?.map((opt) => (
+                          <option key={opt} value={opt}>
+                            {opt}
+                          </option>
+                        ))}
+                      </select>
+                    ) : field.type === "boolean" ? (
+                      <label className="flex items-center gap-3 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={formData[field.key] === true || formData[field.key] === "true"}
+                          onChange={(e) =>
+                            setFormData((prev) => ({
+                              ...prev,
+                              [field.key]: e.target.checked,
+                            }))
+                          }
+                          className="w-5 h-5 accent-[#1B5E3B] rounded"
+                        />
+                        <span className="text-sm text-gray-600">
+                          {formData[field.key] === true || formData[field.key] === "true" ? "✅ نعم" : "❌ لا"}
+                        </span>
+                      </label>
+                    ) : field.type === "number" ? (
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={formData[field.key] ?? ""}
+                        onChange={(e) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            [field.key]: e.target.value,
+                          }))
+                        }
+                        className="w-full px-4 py-2.5 bg-[#F5F0E8] border border-[#E8E4DC] rounded-xl text-sm outline-none focus:ring-2 focus:ring-[#C9A84C]"
                       />
-                      <span className="text-sm text-gray-600">
-                        {formData[field.key] === true || formData[field.key] === "true" ? "✅ نعم" : "❌ لا"}
-                      </span>
-                    </label>
-                  ) : field.type === "number" ? (
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={formData[field.key] ?? ""}
-                      onChange={(e) =>
-                        setFormData((prev) => ({
-                          ...prev,
-                          [field.key]: e.target.value,
-                        }))
-                      }
-                      className="w-full px-4 py-2.5 bg-[#F5F0E8] border border-[#E8E4DC] rounded-xl text-sm outline-none focus:ring-2 focus:ring-[#C9A84C]"
-                    />
-                  ) : (
-                    <input
-                      type="text"
-                      value={formData[field.key] ?? ""}
-                      onChange={(e) =>
-                        setFormData((prev) => ({
-                          ...prev,
-                          [field.key]: e.target.value,
-                        }))
-                      }
-                      className="w-full px-4 py-2.5 bg-[#F5F0E8] border border-[#E8E4DC] rounded-xl text-sm outline-none focus:ring-2 focus:ring-[#C9A84C]"
-                    />
-                  )}
-                </div>
-              ))}
+                    ) : (
+                      <input
+                        type="text"
+                        value={formData[field.key] ?? ""}
+                        onChange={(e) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            [field.key]: e.target.value,
+                          }))
+                        }
+                        className="w-full px-4 py-2.5 bg-[#F5F0E8] border border-[#E8E4DC] rounded-xl text-sm outline-none focus:ring-2 focus:ring-[#C9A84C]"
+                      />
+                    )}
+                  </div>
+                ))
+              )}
 
               <div className="flex gap-3 pt-2">
                 <button
@@ -780,6 +989,7 @@ export default function CataloguePage() {
                     setShowForm(false);
                     setEditingId(null);
                     setFormData({});
+                    setFoamHeights({});
                   }}
                   className="flex-1 py-3 bg-gray-100 text-gray-700 rounded-xl text-sm font-bold hover:bg-gray-200 transition"
                 >
@@ -802,6 +1012,168 @@ export default function CataloguePage() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ✅ مكون حقول البونج (منتج + جدول 3 ارتفاعات)
+function FoamFormFields({
+  formData,
+  setFormData,
+  foamHeights,
+  setFoamHeights,
+  uploadingImage,
+  handleImageUpload,
+  currentTab,
+}: {
+  formData: Record<string, any>;
+  setFormData: React.Dispatch<React.SetStateAction<Record<string, any>>>;
+  foamHeights: Record<number, any>;
+  setFoamHeights: React.Dispatch<React.SetStateAction<Record<number, any>>>;
+  uploadingImage: boolean;
+  handleImageUpload: (file: File) => void;
+  currentTab: CatalogueTab;
+}) {
+  const updateHeight = (heightCm: number, field: string, value: string) => {
+    setFoamHeights((prev) => ({
+      ...prev,
+      [heightCm]: {
+        ...prev[heightCm],
+        [field]: value,
+      },
+    }));
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Basic Info */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="md:col-span-2">
+          <label className="block text-sm font-medium text-gray-700 mb-1.5">الصورة</label>
+          <div className="space-y-2">
+            {formData.image_url && (
+              <div className="w-24 h-24 rounded-lg overflow-hidden bg-gray-100 relative">
+                <Image
+                  src={formData.image_url}
+                  alt="معاينة"
+                  fill
+                  className="object-cover"
+                  sizes="96px"
+                />
+              </div>
+            )}
+            <label className="flex items-center justify-center w-full px-4 py-3 bg-[#F5F0E8] border-2 border-dashed border-[#E8E4DC] rounded-xl cursor-pointer hover:bg-[#E8E4DC] transition">
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) handleImageUpload(file);
+                }}
+              />
+              {uploadingImage ? (
+                <Loader2 className="w-5 h-5 text-[#1B5E3B] animate-spin" />
+              ) : (
+                <span className="text-sm text-[#6B7B6E] font-medium">📷 اختر صورة</span>
+              )}
+            </label>
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1.5">اسم المنتج *</label>
+          <input
+            type="text"
+            value={formData.name ?? ""}
+            onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))}
+            placeholder="مثال: بونج عادي"
+            className="w-full px-4 py-2.5 bg-[#F5F0E8] border border-[#E8E4DC] rounded-xl text-sm outline-none focus:ring-2 focus:ring-[#C9A84C]"
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1.5">العرض الافتراضي (سم)</label>
+          <input
+            type="number"
+            value={formData.default_width_cm ?? 70}
+            onChange={(e) => setFormData((prev) => ({ ...prev, default_width_cm: e.target.value }))}
+            className="w-full px-4 py-2.5 bg-[#F5F0E8] border border-[#E8E4DC] rounded-xl text-sm outline-none focus:ring-2 focus:ring-[#C9A84C]"
+          />
+        </div>
+
+        <div className="md:col-span-2">
+          <label className="block text-sm font-medium text-gray-700 mb-1.5">الوصف</label>
+          <input
+            type="text"
+            value={formData.description ?? ""}
+            onChange={(e) => setFormData((prev) => ({ ...prev, description: e.target.value }))}
+            placeholder="وصف مختصر..."
+            className="w-full px-4 py-2.5 bg-[#F5F0E8] border border-[#E8E4DC] rounded-xl text-sm outline-none focus:ring-2 focus:ring-[#C9A84C]"
+          />
+        </div>
+
+        <div className="md:col-span-2">
+          <label className="flex items-center gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={formData.is_active === true || formData.is_active === "true"}
+              onChange={(e) => setFormData((prev) => ({ ...prev, is_active: e.target.checked }))}
+              className="w-5 h-5 accent-[#1B5E3B] rounded"
+            />
+            <span className="text-sm text-gray-600">منتج نشط</span>
+          </label>
+        </div>
+      </div>
+
+      {/* Prices Table */}
+      <div className="space-y-3">
+        <h3 className="text-lg font-bold text-[#1B5E3B] flex items-center gap-2">
+          <DollarSign className="w-5 h-5" />
+          الأسعار حسب الارتفاع
+        </h3>
+
+        <div className="bg-[#F5F0E8] rounded-xl border border-[#E8E4DC] overflow-hidden">
+          {/* Header */}
+          <div className="grid grid-cols-4 gap-3 p-3 bg-[#1B5E3B]/10 text-xs font-bold text-[#1B5E3B]">
+            <div className="flex items-center gap-1"><Ruler className="w-3 h-3"/> الارتفاع</div>
+            <div className="flex items-center gap-1"><DollarSign className="w-3 h-3"/> سعر المتر</div>
+            <div className="flex items-center gap-1"><CornerDownRight className="w-3 h-3"/> فورمجة مربعة</div>
+            <div className="flex items-center gap-1"><CornerDownRight className="w-3 h-3"/> فورمجة مثلثة</div>
+          </div>
+
+          {/* Rows */}
+          {HEIGHTS.map((h) => (
+            <div key={h} className="grid grid-cols-4 gap-3 p-3 border-t border-[#E8E4DC] items-center">
+              <div className="font-bold text-[#C9A84C] text-lg">{h} سم</div>
+              <input
+                type="number"
+                step="0.01"
+                value={foamHeights[h]?.price_per_meter ?? ""}
+                onChange={(e) => updateHeight(h, "price_per_meter", e.target.value)}
+                placeholder="0.00"
+                className="w-full px-3 py-2 bg-white border border-[#E8E4DC] rounded-lg text-sm outline-none focus:ring-2 focus:ring-[#C9A84C] text-center"
+              />
+              <input
+                type="number"
+                step="0.01"
+                value={foamHeights[h]?.square_corner_price ?? ""}
+                onChange={(e) => updateHeight(h, "square_corner_price", e.target.value)}
+                placeholder="0"
+                className="w-full px-3 py-2 bg-white border border-[#E8E4DC] rounded-lg text-sm outline-none focus:ring-2 focus:ring-[#C9A84C] text-center"
+              />
+              <input
+                type="number"
+                step="0.01"
+                value={foamHeights[h]?.triangle_corner_price ?? ""}
+                onChange={(e) => updateHeight(h, "triangle_corner_price", e.target.value)}
+                placeholder="0"
+                className="w-full px-3 py-2 bg-white border border-[#E8E4DC] rounded-lg text-sm outline-none focus:ring-2 focus:ring-[#C9A84C] text-center"
+              />
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
