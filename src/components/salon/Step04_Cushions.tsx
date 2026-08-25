@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { ArrowLeft, ArrowRight, Plus, Minus, Loader2, Trash2, RotateCcw, Lock, ImageIcon, Camera, X, Pencil } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { OrderDraft, Seddari, CushionItem, StitchStyle } from "@/lib/types";
@@ -15,7 +15,6 @@ interface Step04Props {
 
 const SIZES = [75, 80, 100];
 const DEFAULT_LWATA_PRICE = 110;
-const MKHAD_IMAGE = "/images/mkhad.png";
 
 export default function Step04_Cushions({ draft, onChange, onNext, onBack }: Step04Props) {
   const seddars: Seddari[] = draft.seddars || [];
@@ -114,10 +113,28 @@ export default function Step04_Cushions({ draft, onChange, onNext, onBack }: Ste
     syncToDraft(updated, totalOverride, fabricOverride);
   };
 
+  /* ═══════════════════════════════════════════════════════════
+     المعادلة الصحيحة:
+     سعر المخدة الواحدة = (ثمن الثوب/متر × استهلاك الثوب/متر) + ثمن الخياطة
+     ═══════════════════════════════════════════════════════════ */
   const calcItemTotal = (item: CushionItem): number => {
-    const stitchCost = item.count * item.stitchFinalPrice;
+    const fabricPricePerMeter = draft.fabric?.price_per_meter || 0;
+    const fabricConsumptionMeters = item.fabricConsumption / 100;
+    const fabricCostPerPillow = fabricPricePerMeter * fabricConsumptionMeters;
+    const pricePerPillow = fabricCostPerPillow + item.stitchFinalPrice;
+    const pillowsTotal = item.count * pricePerPillow;
     const lwataCost = item.hasLwata ? item.count * item.lwataPrice : 0;
-    return stitchCost + lwataCost;
+    return pillowsTotal + lwataCost;
+  };
+
+  const calcPillowDetails = (item: CushionItem) => {
+    const fabricPricePerMeter = draft.fabric?.price_per_meter || 0;
+    const fabricConsumptionMeters = item.fabricConsumption / 100;
+    const fabricCostPerPillow = fabricPricePerMeter * fabricConsumptionMeters;
+    const pricePerPillow = fabricCostPerPillow + item.stitchFinalPrice;
+    const pillowsTotal = item.count * pricePerPillow;
+    const lwataCost = item.hasLwata ? item.count * item.lwataPrice : 0;
+    return { fabricCostPerPillow, pricePerPillow, pillowsTotal, lwataCost };
   };
 
   const calcFabricTotal = (list: CushionItem[]): number => {
@@ -140,7 +157,6 @@ export default function Step04_Cushions({ draft, onChange, onNext, onBack }: Ste
     });
   };
 
-  // فتح نافذة تعديل السعر
   const handleEditPrice = (itemId: string, field: 'stitch' | 'lwata' | 'fabric') => {
     const item = items.find(i => i.id === itemId);
     if (!item) return;
@@ -191,7 +207,6 @@ export default function Step04_Cushions({ draft, onChange, onNext, onBack }: Ste
     }
   };
 
-  // إضافة شكل يدوي
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -237,7 +252,6 @@ export default function Step04_Cushions({ draft, onChange, onNext, onBack }: Ste
 
   const getSeddariItems = (seddariId: string) => items.filter((i) => i.seddariId === seddariId);
 
-  // عداد منفصل للسدادر والفورمجات
   const getSeddariDisplayIndex = (seddari: Seddari, globalIdx: number) => {
     const isFormaja = seddari.type === "formaja";
     const sameTypeBefore = seddars.filter((s, i) => i < globalIdx && s.type === seddari.type).length;
@@ -253,7 +267,7 @@ export default function Step04_Cushions({ draft, onChange, onNext, onBack }: Ste
           </button>
           <div className="text-center">
             <h1 className="text-xl font-bold text-[#0D1F17] md:text-2xl flex items-center justify-center gap-2">
-              <img src={MKHAD_IMAGE} alt="مخدة" className="inline-block h-8 w-8" onError={(e) => { e.currentTarget.style.display = "none"; }} />
+              <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-[#1B5E3B] text-white text-sm font-bold">🛋️</span>
               المخاد
             </h1>
             <p className="mt-0.5 text-sm text-gray-500">الخطوة 4 من 7 — اختيار الحجم والعدد والخياطة</p>
@@ -295,131 +309,150 @@ export default function Step04_Cushions({ draft, onChange, onNext, onBack }: Ste
                       <p className="text-center text-sm text-gray-400 py-4">اضغط "إنشاء مخاد تلقائية" لحساب العدد</p>
                     ) : (
                       <div className="space-y-4">
-                        {seddariItems.map((item, itemIdx) => (
-                          <div key={item.id} className="rounded-xl border border-gray-100 bg-gray-50/50 p-4">
-                            <div className="flex items-center justify-between mb-3">
-                              <span className="text-sm font-bold text-[#0D1F17]">مخدة {itemIdx + 1} ({item.size}سم) × {item.count}</span>
-                              <button onClick={() => handleDelete(item.id)} className="text-red-400 hover:text-red-600 transition"><Trash2 className="h-4 w-4" /></button>
-                            </div>
-
-                            {/* الحجم والعدد واستهلاك الثوب */}
-                            <div className="grid grid-cols-2 gap-3 md:grid-cols-4 mb-4">
-                              <div>
-                                <label className="mb-1 block text-xs text-gray-500">الحجم</label>
-                                <select value={item.size} onChange={(e) => {
-                                  const newSize = Number(e.target.value);
-                                  const newCount = calcAutoCount(seddari.length, newSize);
-                                  handleUpdate(item.id, { size: newSize, count: newCount });
-                                }} className="w-full rounded-lg border border-gray-200 px-2 py-1.5 text-sm font-bold text-center">
-                                  {SIZES.map((s) => <option key={s} value={s}>{s} سم</option>)}
-                                </select>
+                        {seddariItems.map((item, itemIdx) => {
+                          const details = calcPillowDetails(item);
+                          return (
+                            <div key={item.id} className="rounded-xl border border-gray-100 bg-gray-50/50 p-4">
+                              <div className="flex items-center justify-between mb-3">
+                                <span className="text-sm font-bold text-[#0D1F17]">مخدة {itemIdx + 1} ({item.size}سم) × {item.count}</span>
+                                <button onClick={() => handleDelete(item.id)} className="text-red-400 hover:text-red-600 transition"><Trash2 className="h-4 w-4" /></button>
                               </div>
-                              <div>
-                                <label className="mb-1 block text-xs text-gray-500">العدد</label>
-                                <div className="flex items-center gap-2">
-                                  <button onClick={() => handleUpdate(item.id, { count: Math.max(1, item.count - 1) })} className="flex h-7 w-7 items-center justify-center rounded-full bg-[#F5F0E8] text-[#1B5E3B] font-bold"><Minus className="h-3 w-3" /></button>
-                                  <span className="w-6 text-center font-bold text-sm">{item.count}</span>
-                                  <button onClick={() => handleUpdate(item.id, { count: item.count + 1 })} className="flex h-7 w-7 items-center justify-center rounded-full bg-[#F5F0E8] text-[#1B5E3B] font-bold"><Plus className="h-3 w-3" /></button>
+
+                              {/* الحجم والعدد واستهلاك الثوب */}
+                              <div className="grid grid-cols-2 gap-3 md:grid-cols-4 mb-4">
+                                <div>
+                                  <label className="mb-1 block text-xs text-gray-500">الحجم</label>
+                                  <select value={item.size} onChange={(e) => {
+                                    const newSize = Number(e.target.value);
+                                    const newCount = calcAutoCount(seddari.length, newSize);
+                                    handleUpdate(item.id, { size: newSize, count: newCount });
+                                  }} className="w-full rounded-lg border border-gray-200 px-2 py-1.5 text-sm font-bold text-center">
+                                    {SIZES.map((s) => <option key={s} value={s}>{s} سم</option>)}
+                                  </select>
+                                </div>
+                                <div>
+                                  <label className="mb-1 block text-xs text-gray-500">العدد</label>
+                                  <div className="flex items-center gap-2">
+                                    <button onClick={() => handleUpdate(item.id, { count: Math.max(1, item.count - 1) })} className="flex h-7 w-7 items-center justify-center rounded-full bg-[#F5F0E8] text-[#1B5E3B] font-bold"><Minus className="h-3 w-3" /></button>
+                                    <span className="w-6 text-center font-bold text-sm">{item.count}</span>
+                                    <button onClick={() => handleUpdate(item.id, { count: item.count + 1 })} className="flex h-7 w-7 items-center justify-center rounded-full bg-[#F5F0E8] text-[#1B5E3B] font-bold"><Plus className="h-3 w-3" /></button>
+                                  </div>
+                                </div>
+                                <div>
+                                  <label className="mb-1 block text-xs text-gray-500">استهلاك الثوب/مخدة</label>
+                                  <div className="flex items-center gap-1">
+                                    <input type="number" min={0} value={item.fabricConsumption} onChange={(e) => handleUpdate(item.id, { fabricConsumption: Number(e.target.value) })} className="w-full rounded-lg border border-[#C9A84C] px-2 py-1.5 text-sm font-bold text-center" />
+                                    <button onClick={() => handleEditPrice(item.id, 'fabric')} className="rounded bg-white p-1 text-gray-400 hover:text-[#C9A84C] transition" title="تعديل">
+                                      <Pencil className="h-3 w-3" />
+                                    </button>
+                                  </div>
+                                </div>
+                                <div>
+                                  <label className="mb-1 block text-xs text-gray-500">المجموع الثوب</label>
+                                  <div className="rounded-lg bg-[#F5F0E8] px-2 py-1.5 text-sm font-bold text-center text-[#1B5E3B]">{(item.count * item.fabricConsumption)} سم</div>
                                 </div>
                               </div>
-                              <div>
-                                <label className="mb-1 block text-xs text-gray-500">استهلاك الثوب/مخدة</label>
-                                <div className="flex items-center gap-1">
-                                  <input type="number" min={0} value={item.fabricConsumption} onChange={(e) => handleUpdate(item.id, { fabricConsumption: Number(e.target.value) })} className="w-full rounded-lg border border-[#C9A84C] px-2 py-1.5 text-sm font-bold text-center" />
-                                  <button onClick={() => handleEditPrice(item.id, 'fabric')} className="rounded bg-white p-1 text-gray-400 hover:text-[#C9A84C] transition" title="تعديل">
-                                    <Pencil className="h-3 w-3" />
-                                  </button>
-                                </div>
-                              </div>
-                              <div>
-                                <label className="mb-1 block text-xs text-gray-500">المجموع الثوب</label>
-                                <div className="rounded-lg bg-[#F5F0E8] px-2 py-1.5 text-sm font-bold text-center text-[#1B5E3B]">{(item.count * item.fabricConsumption)} سم</div>
-                              </div>
-                            </div>
 
-                            {/* ✅ شكل الخياطة - بطاقات بصور من Supabase */}
-                            <div className="mb-4">
-                              <label className="mb-2 block text-xs font-bold text-gray-600">شكل الخياطة</label>
-                              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : (
-                                <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
-                                  {allStyles.map((style) => (
-                                    <div key={style.id} className={`relative rounded-xl border-2 p-2 text-center transition cursor-pointer ${item.stitchStyleId === style.id ? "border-[#C9A84C] bg-[#F5F0E8] shadow-md" : "border-gray-200 bg-white hover:border-[#1B5E3B]/30"}`}>
-                                      {style.isCustom && (
-                                        <button 
-                                          onClick={(e) => { e.stopPropagation(); handleDeleteCustom(style.id); }}
-                                          className="absolute left-1 top-1 z-10 rounded-full bg-red-50 p-0.5 text-red-500 hover:bg-red-100 transition"
+                              {/* شكل الخياطة - بطاقات بصور من Supabase */}
+                              <div className="mb-4">
+                                <label className="mb-2 block text-xs font-bold text-gray-600">شكل الخياطة</label>
+                                {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : (
+                                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                                    {allStyles.map((style) => {
+                                      const isSelected = item.stitchStyleId === style.id;
+                                      return (
+                                        <div
+                                          key={style.id}
+                                          onClick={() => handleUpdate(item.id, { stitchStyleId: style.id, stitchStyleName: style.name, stitchPrice: style.price, stitchFinalPrice: style.price })}
+                                          className={`relative rounded-xl border-2 p-2 text-center transition cursor-pointer ${isSelected ? "border-[#C9A84C] bg-[#F5F0E8] shadow-md" : "border-gray-200 bg-white hover:border-[#1B5E3B]/30"}`}
+                                          role="button"
+                                          tabIndex={0}
+                                          onKeyDown={(e) => e.key === 'Enter' && handleUpdate(item.id, { stitchStyleId: style.id, stitchStyleName: style.name, stitchPrice: style.price, stitchFinalPrice: style.price })}
                                         >
-                                          <X className="h-2.5 w-2.5" />
-                                        </button>
-                                      )}
-                                      <button onClick={() => handleUpdate(item.id, { stitchStyleId: style.id, stitchStyleName: style.name, stitchPrice: style.price, stitchFinalPrice: style.price })} className="w-full">
-                                        {item.stitchStyleId === style.id && (
-                                          <div className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-[#1B5E3B] text-white">
-                                            <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
-                                          </div>
-                                        )}
-                                        <div className="aspect-square w-full rounded-lg bg-gray-100 mb-1 flex items-center justify-center overflow-hidden">
-                                          {style.image_url ? <img src={style.image_url} alt={style.name} className="h-full w-full object-cover" /> : <ImageIcon className="h-6 w-6 text-gray-300" />}
-                                        </div>
-                                        <p className="font-bold text-[10px] text-[#0D1F17] truncate">{style.name}</p>
-                                        <div className="flex items-center justify-center gap-1 mt-0.5">
-                                          <p className="text-xs font-extrabold text-[#1B5E3B]">{style.price} DH</p>
-                                          {item.stitchStyleId === style.id && (
-                                            <button onClick={(e) => { e.stopPropagation(); handleEditPrice(item.id, 'stitch'); }} className="rounded bg-white p-0.5 text-gray-400 hover:text-[#C9A84C] transition">
-                                              <Pencil className="h-2.5 w-2.5" />
+                                          {style.isCustom && (
+                                            <button
+                                              onClick={(e) => { e.stopPropagation(); handleDeleteCustom(style.id); }}
+                                              className="absolute left-1 top-1 z-10 rounded-full bg-red-50 p-0.5 text-red-500 hover:bg-red-100 transition"
+                                            >
+                                              <X className="h-2.5 w-2.5" />
                                             </button>
                                           )}
+                                          {isSelected && (
+                                            <div className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-[#1B5E3B] text-white z-10">
+                                              <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                                            </div>
+                                          )}
+                                          <div className="aspect-square w-full rounded-lg bg-gray-100 mb-1 flex items-center justify-center overflow-hidden">
+                                            {style.image_url ? <img src={style.image_url} alt={style.name} className="h-full w-full object-cover" /> : <ImageIcon className="h-6 w-6 text-gray-300" />}
+                                          </div>
+                                          <p className="font-bold text-[10px] text-[#0D1F17] truncate">{style.name}</p>
+                                          <div className="flex items-center justify-center gap-1 mt-0.5">
+                                            <p className="text-xs font-extrabold text-[#1B5E3B]">{style.price} DH</p>
+                                            {isSelected && (
+                                              <button onClick={(e) => { e.stopPropagation(); handleEditPrice(item.id, 'stitch'); }} className="rounded bg-white p-0.5 text-gray-400 hover:text-[#C9A84C] transition">
+                                                <Pencil className="h-2.5 w-2.5" />
+                                              </button>
+                                            )}
+                                          </div>
                                         </div>
-                                      </button>
-                                    </div>
-                                  ))}
+                                      );
+                                    })}
 
-                                  {/* زر إضافة شكل يدوي */}
-                                  <button 
-                                    onClick={() => { setCustomModalOpen(true); setCustomAdminOk(false); }}
-                                    className="flex flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-[#C9A84C]/40 bg-white p-2 text-[#C9A84C] transition hover:border-[#C9A84C] hover:bg-[#C9A84C]/5 min-h-[100px]"
-                                  >
-                                    <Plus className="h-5 w-5" />
-                                    <span className="text-[10px] font-bold">شكل يدوي</span>
-                                  </button>
-                                </div>
-                              )}
-                            </div>
-
-                            {/* ✅ اللواط - سؤال نهائي */}
-                            <div className="rounded-lg bg-white border border-gray-200 p-3">
-                              <div className="flex items-center justify-between">
-                                <label className="flex items-center gap-2 cursor-pointer">
-                                  <input 
-                                    type="checkbox" 
-                                    checked={item.hasLwata} 
-                                    onChange={(e) => handleUpdate(item.id, { hasLwata: e.target.checked })} 
-                                    className="h-4 w-4 accent-[#1B5E3B]" 
-                                  />
-                                  <span className="text-sm font-bold text-gray-700">لواط؟</span>
-                                </label>
-                                {item.hasLwata && (
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-xs text-gray-500">{item.count} × {item.lwataPrice} DH = </span>
-                                    <span className="text-sm font-bold text-[#C9A84C]">{(item.count * item.lwataPrice)} DH</span>
-                                    <button onClick={() => handleEditPrice(item.id, 'lwata')} className="rounded bg-gray-50 p-1 text-gray-400 hover:text-[#C9A84C] transition" title="تعديل">
-                                      <Pencil className="h-3 w-3" />
+                                    {/* زر إضافة شكل يدوي */}
+                                    <button
+                                      onClick={() => { setCustomModalOpen(true); setCustomAdminOk(false); }}
+                                      className="flex flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-[#C9A84C]/40 bg-white p-2 text-[#C9A84C] transition hover:border-[#C9A84C] hover:bg-[#C9A84C]/5 min-h-[100px]"
+                                    >
+                                      <Plus className="h-5 w-5" />
+                                      <span className="text-[10px] font-bold">شكل يدوي</span>
                                     </button>
                                   </div>
                                 )}
                               </div>
-                            </div>
 
-                            {/* ملخص المخدة */}
-                            <div className="mt-3 pt-2 border-t border-gray-200 flex items-center justify-between text-xs">
-                              <span className="text-gray-500">
-                                خياطة: {item.count} × {item.stitchFinalPrice} = {(item.count * item.stitchFinalPrice)} DH
-                                {item.hasLwata && <span> + لواط: {(item.count * item.lwataPrice)} DH</span>}
-                              </span>
-                              <span className="font-bold text-[#1B5E3B]">= {calcItemTotal(item)} DH</span>
+                              {/* اللواط */}
+                              <div className="rounded-lg bg-white border border-gray-200 p-3">
+                                <div className="flex items-center justify-between">
+                                  <label className="flex items-center gap-2 cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      checked={item.hasLwata}
+                                      onChange={(e) => handleUpdate(item.id, { hasLwata: e.target.checked })}
+                                      className="h-4 w-4 accent-[#1B5E3B]"
+                                    />
+                                    <span className="text-sm font-bold text-gray-700">لواط؟</span>
+                                  </label>
+                                  {item.hasLwata && (
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-xs text-gray-500">{item.count} × {item.lwataPrice} DH = </span>
+                                      <span className="text-sm font-bold text-[#C9A84C]">{(item.count * item.lwataPrice)} DH</span>
+                                      <button onClick={() => handleEditPrice(item.id, 'lwata')} className="rounded bg-gray-50 p-1 text-gray-400 hover:text-[#C9A84C] transition" title="تعديل">
+                                        <Pencil className="h-3 w-3" />
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* ملخص المخدة مع سعر المخدة الواحدة */}
+                              <div className="mt-3 pt-2 border-t border-gray-200">
+                                <div className="flex items-center justify-between text-xs mb-1">
+                                  <span className="text-gray-500">
+                                    سعر المخدة الواحدة: <span className="font-bold text-[#1B5E3B]">{details.pricePerPillow.toFixed(2)} DH</span>
+                                    <span className="text-gray-400"> (ثوب: {details.fabricCostPerPillow.toFixed(2)} + خياطة: {item.stitchFinalPrice})</span>
+                                  </span>
+                                </div>
+                                <div className="flex items-center justify-between text-xs">
+                                  <span className="text-gray-500">
+                                    {item.count} × {details.pricePerPillow.toFixed(2)} DH = {details.pillowsTotal.toFixed(2)} DH
+                                    {item.hasLwata && <span className="text-[#C9A84C]"> + لواط: {details.lwataCost.toFixed(2)} DH</span>}
+                                  </span>
+                                  <span className="font-bold text-[#1B5E3B]">= {calcItemTotal(item).toFixed(2)} DH</span>
+                                </div>
+                              </div>
                             </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                   </div>
@@ -437,21 +470,27 @@ export default function Step04_Cushions({ draft, onChange, onNext, onBack }: Ste
                   {items.length === 0 ? (
                     <div className="p-8 text-center text-gray-400">لا توجد مخدات بعد</div>
                   ) : (
-                    items.map((item, idx) => (
-                      <div key={item.id} className="px-5 py-3">
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm text-gray-600">مخدة {idx + 1} ({item.size}سم) × {item.count}</span>
-                          <span className="font-bold text-[#0D1F17]">{calcItemTotal(item)} DH</span>
+                    items.map((item, idx) => {
+                      const details = calcPillowDetails(item);
+                      return (
+                        <div key={item.id} className="px-5 py-3">
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm text-gray-600">مخدة {idx + 1} ({item.size}سم) × {item.count}</span>
+                            <span className="font-bold text-[#0D1F17]">{calcItemTotal(item).toFixed(2)} DH</span>
+                          </div>
+                          <p className="text-xs text-gray-400">
+                            استهلاك: {item.count * item.fabricConsumption} سم ثوب |
+                            سعر/مخدة: {details.pricePerPillow.toFixed(2)} DH
+                          </p>
                         </div>
-                        <p className="text-xs text-gray-400">استهلاك: {item.count * item.fabricConsumption} سم ثوب</p>
-                      </div>
-                    ))
+                      );
+                    })
                   )}
                 </div>
                 <div className="border-t border-gray-200 bg-[#F5F0E8] px-5 py-4 space-y-3">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-sm text-gray-600">استهلاك الثوب الكلي</p>
+                      <p className="text-sm text-gray-600">استهلاك المخاد من الثوب</p>
                       <p className="mt-1 text-xl font-extrabold text-[#1B5E3B]">{displayFabric.toLocaleString("fr-MA")} سم</p>
                     </div>
                     <button onClick={() => { setManualFabricTotal(String(displayFabric)); setFabricEditOpen(true); setFabricAdminOk(false); }} className="rounded-lg bg-white border border-[#C9A84C] p-2 text-[#C9A84C] hover:bg-[#C9A84C]/10 transition" title="تعديل استهلاك الثوب">
@@ -460,7 +499,7 @@ export default function Step04_Cushions({ draft, onChange, onNext, onBack }: Ste
                   </div>
                   <div className="border-t border-[#C9A84C]/20 pt-2 flex items-center justify-between">
                     <div>
-                      <p className="text-sm text-gray-600">المجموع المالي</p>
+                      <p className="text-sm text-gray-600">مجموع ثمن المخاد</p>
                       <p className="mt-1 text-xl font-extrabold text-[#1B5E3B]">{displayTotal.toLocaleString("fr-MA")} DH</p>
                       {totalOverride !== null && <p className="mt-0.5 text-xs text-amber-600">⚠️ مُعدّل يدوياً</p>}
                     </div>
@@ -508,7 +547,7 @@ export default function Step04_Cushions({ draft, onChange, onNext, onBack }: Ste
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
           <div className="relative mx-4 w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl">
             <button onClick={() => { setTotalEditOpen(false); setTotalAdminOk(false); }} className="absolute left-3 top-3 rounded-full bg-gray-100 p-2 text-gray-600 hover:bg-gray-200 transition"><RotateCcw className="h-5 w-5" /></button>
-            <h3 className="mb-4 text-center text-lg font-bold text-[#0D1F17]">تعديل مجموع المخاد</h3>
+            <h3 className="mb-4 text-center text-lg font-bold text-[#0D1F17]">تعديل مجموع ثمن المخاد</h3>
             {!totalAdminOk ? (
               <div className="py-4">
                 <p className="mb-4 text-center text-gray-600">أدخل كود المدير</p>
@@ -536,7 +575,7 @@ export default function Step04_Cushions({ draft, onChange, onNext, onBack }: Ste
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
           <div className="relative mx-4 w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl">
             <button onClick={() => { setFabricEditOpen(false); setFabricAdminOk(false); }} className="absolute left-3 top-3 rounded-full bg-gray-100 p-2 text-gray-600 hover:bg-gray-200 transition"><RotateCcw className="h-5 w-5" /></button>
-            <h3 className="mb-4 text-center text-lg font-bold text-[#0D1F17]">تعديل استهلاك الثوب</h3>
+            <h3 className="mb-4 text-center text-lg font-bold text-[#0D1F17]">تعديل استهلاك المخاد من الثوب</h3>
             {!fabricAdminOk ? (
               <div className="py-4">
                 <p className="mb-4 text-center text-gray-600">أدخل كود المدير</p>

@@ -1,100 +1,78 @@
-/* ═══════════════════════════════════════════════════════════════
-   BUILDER: Wood (عود / خشب) — FIXED to match actual WoodSellerFlow
-   ═══════════════════════════════════════════════════════════════ */
+import { v4 as uuidv4 } from "uuid";
+import type { CartItem } from "@/contexts/OrderCartContext";
 
-import { ProductResult } from '../types';
-
-export interface WoodDraft {
+interface BuildWoodCartItemParams {
   selectedModel: {
     id: string;
     name: string;
     code: string;
     wood_type: string;
     image_url?: string;
+    seddari_price_per_meter: number;
   };
-  salonShape: string;
   seddars: Array<{
     index: number;
-    length: number;        // ← WoodSellerFlow uses "length"
+    length: number; // بالمتر
     price: number;
   }>;
-  items: Array<{           // ← WoodSellerFlow calls it "items" not "extras"
+  items: Array<{
     item_name: string;
     quantity: number;
     unit_price: number;
     total_price: number;
   }>;
-  priceModified?: boolean;
-  finalPrice?: number;
-  discountAmount?: number;
-  discountReason?: string;
+  salonShape: string;
   notes?: string;
+  priceModified: boolean;
+  finalPrice?: number;
+  discountAmount: number;
+  discountReason: string;
 }
 
-export function buildWoodCartItem(draft: WoodDraft): ProductResult {
-  const seddariTotal = draft.seddars.reduce((s, sed) => s + (sed.price || 0), 0);
-  const extrasTotal = draft.items.reduce((s, ex) => s + (ex.total_price || 0), 0);
-  const calculatedTotal = seddariTotal + extrasTotal;
-
-  const displayTotal = (draft.priceModified && draft.finalPrice) 
-    ? draft.finalPrice 
-    : calculatedTotal;
-
-  // Build details — filter out qty=0 extras
-  const woodItems = draft.items
-    .filter(ex => (ex.quantity || 0) > 0)
-    .map(ex => ({
-      type: ex.item_name,
-      name: ex.item_name,
-      quantity: ex.quantity,
-      unitPrice: ex.unit_price,
-      totalPrice: ex.total_price,
-    }));
-
-  const details: Record<string, any> = {
-    model: {
-      id: draft.selectedModel.id,
-      name: draft.selectedModel.name,
-      code: draft.selectedModel.code,
-      woodType: draft.selectedModel.wood_type,
-    },
-    salonShape: draft.salonShape,
-    seddars: draft.seddars.map(s => ({
-      index: s.index,
-      lengthCm: s.length,
-      price: s.price,
-    })),
-  };
-
-  if (woodItems.length > 0) {
-    details.woodItems = woodItems;
-  }
-
-  if (draft.notes) {
-    details.notes = draft.notes;
-  }
-
-  const calculations: Record<string, any> = {
-    subtotal: calculatedTotal,
-    seddariTotal,
-    itemsTotal: extrasTotal,
-    finalTotal: displayTotal,
-  };
-
-  if (draft.discountAmount && draft.discountAmount > 0) {
-    calculations.discountAmount = draft.discountAmount;
-  }
+export function buildWoodCartItem(params: BuildWoodCartItemParams): CartItem {
+  const seddariTotal = params.seddars.reduce((s, x) => s + x.price, 0);
+  const itemsTotal = params.items.reduce((s, x) => s + x.total_price, 0);
+  const subtotal = seddariTotal + itemsTotal;
+  const finalTotal = params.finalPrice ?? subtotal;
 
   return {
-    id: 'wood-' + Date.now(),
-    productType: 'wood',
-    productName: `عود — ${draft.selectedModel.name}`,
-    thumbnailUrl: draft.selectedModel.image_url,
+    id: uuidv4(),
+    productType: "wood",
+    productName: params.selectedModel.name,
+    thumbnailUrl: params.selectedModel.image_url,
     quantity: 1,
-    unitPrice: displayTotal,
-    totalPrice: displayTotal,
-    details,
-    calculations,
-    addedAt: new Date().toISOString(),
+    unitPrice: finalTotal,
+    totalPrice: finalTotal,
+
+    details: {
+      model: {
+        name: params.selectedModel.name,
+        woodType: params.selectedModel.wood_type,
+      },
+      salonShape: params.salonShape,
+      seddars: params.seddars.map((s) => ({
+        index: s.index,
+        lengthCm: Math.round(s.length * 100),
+        widthCm: 70,
+        heightCm: 30,
+        price: s.price,
+      })),
+      woodItems: params.items.map((i) => ({
+        name: i.item_name,
+        type: "extra",
+        quantity: i.quantity,
+        unitPrice: i.unit_price,
+        totalPrice: i.total_price,
+      })),
+      notes: params.notes,
+    },
+
+    calculations: {
+      seddariTotal,
+      itemsTotal,
+      subtotal,
+      discount: params.discountAmount,
+      finalTotal,
+    },
   };
 }

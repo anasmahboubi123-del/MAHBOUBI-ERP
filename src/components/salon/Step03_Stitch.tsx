@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { ArrowLeft, ArrowRight, Plus, Loader2, Scissors, RotateCcw, Lock, ImageIcon, Camera, X, Trash2, Pencil } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import { OrderDraft, Seddari, SedariStitchSelection, SedariFormaja } from "@/lib/types";
+import { OrderDraft, Seddari, SedariStitchSelection } from "@/lib/types";
 import PinLock from "@/components/ui/PinLock";
 
 interface StitchStyle {
@@ -28,18 +28,15 @@ export default function Step03_Stitch({ draft, onChange, onNext, onBack }: Step0
   const [loading, setLoading] = useState(true);
   const [selections, setSelections] = useState<Record<string, SedariStitchSelection>>({});
 
-  // تعديل السعر
   const [editSeddariId, setEditSeddariId] = useState<string | null>(null);
   const [editPriceOpen, setEditPriceOpen] = useState(false);
   const [priceAdminOk, setPriceAdminOk] = useState(false);
   const [newPriceInput, setNewPriceInput] = useState("");
 
-  // تعديل المجموع
   const [totalEditOpen, setTotalEditOpen] = useState(false);
   const [totalAdminOk, setTotalAdminOk] = useState(false);
   const [manualTotal, setManualTotal] = useState("");
 
-  // إضافة شكل يدوي
   const [customModalOpen, setCustomModalOpen] = useState(false);
   const [customName, setCustomName] = useState("");
   const [customPrice, setCustomPrice] = useState("");
@@ -47,7 +44,13 @@ export default function Step03_Stitch({ draft, onChange, onNext, onBack }: Step0
   const [customAdminOk, setCustomAdminOk] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // جلب الأشكال من Supabase + الأشكال اليدوية المحفوظة
+  /* ── refs لتجنب loops ── */
+  const stageTotalsRef = useRef(draft.stageTotals);
+  const onChangeRef = useRef(onChange);
+  stageTotalsRef.current = draft.stageTotals;
+  onChangeRef.current = onChange;
+
+  // جلب الأشكال من Supabase (مرة واحدة فقط)
   useEffect(() => {
     async function fetchStyles() {
       setLoading(true);
@@ -64,9 +67,9 @@ export default function Step03_Stitch({ draft, onChange, onNext, onBack }: Step0
       setLoading(false);
     }
     fetchStyles();
-  }, [draft.customStitchStyles]);
+  }, []); // ← فارغ: يشغل مرة واحدة فقط
 
-  // استعادة التحديدات
+  // تحميل الاختيارات المحفوظة (مرة واحدة فقط)
   useEffect(() => {
     const saved = draft.sedariStitches;
     if (saved?.length) {
@@ -74,12 +77,23 @@ export default function Step03_Stitch({ draft, onChange, onNext, onBack }: Step0
       saved.forEach((s) => { map[s.seddariId] = s; });
       setSelections(map);
     }
-  }, [draft.sedariStitches]);
+  }, []); // ← فارغ: يشغل مرة واحدة فقط
+
+  // ✅ FIXED: تزامن selections مع Draft عبر useEffect (وليس داخل setState updater)
+  useEffect(() => {
+    const list = Object.values(selections);
+    const computed = list.reduce((sum, s) => sum + s.finalPrice, 0);
+    const total = draft.stage3TotalOverride ?? computed;
+    onChangeRef.current({
+      sedariStitches: list,
+      stageTotals: { ...(stageTotalsRef.current ?? {}), stitch: total }
+    });
+  }, [selections, draft.stage3TotalOverride]);
 
   const handleSelect = useCallback((seddariId: string, style: StitchStyle) => {
     setSelections((prev) => {
       const existing = prev[seddariId];
-      const next = {
+      return {
         ...prev,
         [seddariId]: {
           seddariId,
@@ -90,22 +104,9 @@ export default function Step03_Stitch({ draft, onChange, onNext, onBack }: Step0
           imageUrl: style.image_url,
         },
       };
-      syncToDraft(next);
-      return next;
     });
   }, []);
 
-  const syncToDraft = (selMap: Record<string, SedariStitchSelection>) => {
-    const list = Object.values(selMap);
-    const computed = list.reduce((sum, s) => sum + s.finalPrice, 0);
-    const total = draft.stage3TotalOverride ?? computed;
-    onChange({ 
-      sedariStitches: list, 
-      stageTotals: { ...(draft.stageTotals ?? {}), stitch: total } 
-    });
-  };
-
-  // فتح نافذة تعديل السعر
   const handleEditPrice = (seddariId: string) => {
     const sel = selections[seddariId];
     if (!sel) return;
@@ -121,9 +122,7 @@ export default function Step03_Stitch({ draft, onChange, onNext, onBack }: Step0
     setSelections((prev) => {
       const sel = prev[editSeddariId];
       if (!sel) return prev;
-      const next = { ...prev, [editSeddariId]: { ...sel, finalPrice: priceNum } };
-      syncToDraft(next);
-      return next;
+      return { ...prev, [editSeddariId]: { ...sel, finalPrice: priceNum } };
     });
     setEditPriceOpen(false);
     setPriceAdminOk(false);
@@ -138,7 +137,6 @@ export default function Step03_Stitch({ draft, onChange, onNext, onBack }: Step0
     }
   };
 
-  // إضافة شكل يدوي
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -181,7 +179,6 @@ export default function Step03_Stitch({ draft, onChange, onNext, onBack }: Step0
       Object.keys(next).forEach(key => {
         if (next[key].styleId === styleId) delete next[key];
       });
-      syncToDraft(next);
       return next;
     });
   };
@@ -190,10 +187,6 @@ export default function Step03_Stitch({ draft, onChange, onNext, onBack }: Step0
   const computedTotal = Object.values(selections).reduce((sum, s) => sum + s.finalPrice, 0);
   const displayTotal = draft.stage3TotalOverride ?? computedTotal;
   const allSelected = seddars.length > 0 && seddars.every((s) => selections[s.id]);
-
-  // عداد السدادر والفورمجات
-  const normalCount = seddars.filter(s => s.type !== "formaja").length;
-  const formajaCount = seddars.filter(s => s.type === "formaja").length;
 
   return (
     <div className="min-h-screen bg-[#F5F0E8]">
@@ -230,8 +223,6 @@ export default function Step03_Stitch({ draft, onChange, onNext, onBack }: Step0
                 seddars.map((seddari, idx) => {
                   const sel = selections[seddari.id];
                   const isFormaja = seddari.type === "formaja";
-
-                  // عداد منفصل للسدادر والفورمجات
                   const normalIdx = seddars.filter((s, i) => i <= idx && s.type !== "formaja").length;
                   const formajaIdx = seddars.filter((s, i) => i <= idx && s.type === "formaja").length;
                   const displayIdx = isFormaja ? formajaIdx : normalIdx;
@@ -244,8 +235,8 @@ export default function Step03_Stitch({ draft, onChange, onNext, onBack }: Step0
                             {isFormaja ? `🌀 فورمجة ${displayIdx}` : `سداري ${displayIdx}`}
                           </h3>
                           <p className="mt-0.5 text-sm text-gray-500">
-                            {isFormaja 
-                              ? `${seddari.fabricConsumption} سم — استهلاك الثوب` 
+                            {isFormaja
+                              ? `${seddari.fabricConsumption} سم — استهلاك الثوب`
                               : `${seddari.length} × ${seddari.width} × ${seddari.height} سم`
                             }
                           </p>
@@ -256,9 +247,9 @@ export default function Step03_Stitch({ draft, onChange, onNext, onBack }: Step0
                             <p className="font-bold text-[#1B5E3B]">{sel.styleName}</p>
                             <div className="mt-1 flex items-center gap-2">
                               <span className="text-sm font-bold text-[#C9A84C]">{sel.finalPrice.toLocaleString("fr-MA")} DH</span>
-                              <button onClick={() => handleEditPrice(seddari.id)} className="rounded bg-white p-1 text-gray-400 hover:text-[#C9A84C] transition" title="تعديل السعر">
+                              <span onClick={() => handleEditPrice(seddari.id)} className="cursor-pointer rounded bg-white p-1 text-gray-400 hover:text-[#C9A84C] transition" role="button" title="تعديل السعر">
                                 <Pencil className="h-3 w-3" />
-                              </button>
+                              </span>
                             </div>
                           </div>
                         ) : (
@@ -266,23 +257,29 @@ export default function Step03_Stitch({ draft, onChange, onNext, onBack }: Step0
                         )}
                       </div>
 
-                      {/* شبكة الأشكال */}
                       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
-                        {styles.map((style) => (
-                          <div key={style.id} className={`relative rounded-2xl border-2 p-3 text-center transition ${sel?.styleId === style.id ? "border-[#C9A84C] bg-[#F5F0E8] shadow-md" : "border-gray-200 bg-white hover:border-[#1B5E3B]/30"}`}>
-                            {style.isCustom && (
-                              <button 
-                                onClick={(e) => { e.stopPropagation(); handleDeleteCustom(style.id); }}
-                                className="absolute left-1.5 top-1.5 z-10 rounded-full bg-red-50 p-1 text-red-500 hover:bg-red-100 transition"
-                                title="حذف"
-                              >
-                                <Trash2 className="h-3 w-3" />
-                              </button>
-                            )}
+                        {styles.map((style) => {
+                          const isSelected = sel?.styleId === style.id;
+                          return (
+                            <div
+                              key={style.id}
+                              onClick={() => handleSelect(seddari.id, style)}
+                              className={`relative rounded-2xl border-2 p-3 text-center transition cursor-pointer ${isSelected ? "border-[#C9A84C] bg-[#F5F0E8] shadow-md" : "border-gray-200 bg-white hover:border-[#1B5E3B]/30"}`}
+                              role="button"
+                              tabIndex={0}
+                              onKeyDown={(e) => e.key === 'Enter' && handleSelect(seddari.id, style)}
+                            >
+                              {style.isCustom && (
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); handleDeleteCustom(style.id); }}
+                                  className="absolute left-1.5 top-1.5 z-10 rounded-full bg-red-50 p-1 text-red-500 hover:bg-red-100 transition"
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                </button>
+                              )}
 
-                            <button onClick={() => handleSelect(seddari.id, style)} className="w-full">
-                              {sel?.styleId === style.id && (
-                                <div className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-[#1B5E3B] text-white">
+                              {isSelected && (
+                                <div className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-[#1B5E3B] text-white z-10">
                                   <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
                                 </div>
                               )}
@@ -291,12 +288,11 @@ export default function Step03_Stitch({ draft, onChange, onNext, onBack }: Step0
                               </div>
                               <p className="font-bold text-sm text-[#0D1F17]">{style.name}</p>
                               <p className="mt-1 text-base font-extrabold text-[#1B5E3B]">{style.price.toLocaleString("fr-MA")} DH</p>
-                            </button>
-                          </div>
-                        ))}
+                            </div>
+                          );
+                        })}
 
-                        {/* زر إضافة شكل يدوي */}
-                        <button 
+                        <button
                           onClick={() => { setCustomModalOpen(true); setCustomAdminOk(false); }}
                           className="flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-[#C9A84C]/40 bg-white p-3 text-[#C9A84C] transition hover:border-[#C9A84C] hover:bg-[#C9A84C]/5 min-h-[140px]"
                         >
@@ -310,7 +306,6 @@ export default function Step03_Stitch({ draft, onChange, onNext, onBack }: Step0
               )}
             </div>
 
-            {/* الملخص الجانبي */}
             <div className="lg:col-span-1">
               <div className="sticky top-24 rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
                 <div className="border-b border-gray-100 bg-[#F5F0E8] px-5 py-3">
@@ -333,9 +328,9 @@ export default function Step03_Stitch({ draft, onChange, onNext, onBack }: Step0
                           <div className="flex items-center gap-2">
                             <span className="font-bold text-[#1B5E3B]">{sel ? `${sel.finalPrice.toLocaleString("fr-MA")} DH` : "—"}</span>
                             {sel && (
-                              <button onClick={() => handleEditPrice(s.id)} className="rounded bg-gray-50 p-1 text-gray-400 hover:text-[#C9A84C] transition" title="تعديل">
+                              <span onClick={() => handleEditPrice(s.id)} className="cursor-pointer rounded bg-gray-50 p-1 text-gray-400 hover:text-[#C9A84C] transition" role="button" title="تعديل">
                                 <Pencil className="h-3 w-3" />
-                              </button>
+                              </span>
                             )}
                           </div>
                         </div>
@@ -361,7 +356,6 @@ export default function Step03_Stitch({ draft, onChange, onNext, onBack }: Step0
         )}
       </div>
 
-      {/* نافذة تعديل السعر */}
       {editPriceOpen && editSeddariId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
           <div className="relative mx-4 w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl">
@@ -385,7 +379,6 @@ export default function Step03_Stitch({ draft, onChange, onNext, onBack }: Step0
         </div>
       )}
 
-      {/* نافذة تعديل المجموع */}
       {totalEditOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
           <div className="relative mx-4 w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl">
@@ -413,7 +406,6 @@ export default function Step03_Stitch({ draft, onChange, onNext, onBack }: Step0
         </div>
       )}
 
-      {/* نافذة إضافة شكل يدوي */}
       {customModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
           <div className="relative mx-4 w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl">
@@ -431,75 +423,32 @@ export default function Step03_Stitch({ draft, onChange, onNext, onBack }: Step0
               <div className="space-y-4">
                 <div>
                   <label className="mb-1.5 block text-sm font-semibold text-gray-700">اسم الشكل</label>
-                  <input 
-                    type="text" 
-                    value={customName} 
-                    onChange={(e) => setCustomName(e.target.value)} 
-                    placeholder="مثال: خياطة مخصصة"
-                    className="w-full rounded-xl border border-gray-300 px-4 py-3 text-[#0D1F17] focus:border-[#1B5E3B] focus:outline-none focus:ring-2 focus:ring-[#1B5E3B]/20" 
-                  />
+                  <input type="text" value={customName} onChange={(e) => setCustomName(e.target.value)} placeholder="مثال: خياطة مخصصة" className="w-full rounded-xl border border-gray-300 px-4 py-3 text-[#0D1F17] focus:border-[#1B5E3B] focus:outline-none focus:ring-2 focus:ring-[#1B5E3B]/20" />
                 </div>
-
                 <div>
                   <label className="mb-1.5 block text-sm font-semibold text-gray-700">السعر (DH)</label>
-                  <input 
-                    type="number" 
-                    dir="ltr" 
-                    value={customPrice} 
-                    onChange={(e) => setCustomPrice(e.target.value)} 
-                    placeholder="150"
-                    className="w-full rounded-xl border border-gray-300 px-4 py-3 text-lg text-[#0D1F17] focus:border-[#1B5E3B] focus:outline-none focus:ring-2 focus:ring-[#1B5E3B]/20" 
-                  />
+                  <input type="number" dir="ltr" value={customPrice} onChange={(e) => setCustomPrice(e.target.value)} placeholder="150" className="w-full rounded-xl border border-gray-300 px-4 py-3 text-lg text-[#0D1F17] focus:border-[#1B5E3B] focus:outline-none focus:ring-2 focus:ring-[#1B5E3B]/20" />
                 </div>
-
                 <div>
                   <label className="mb-1.5 block text-sm font-semibold text-gray-700">صورة (اختياري)</label>
-                  <input 
-                    ref={fileInputRef}
-                    type="file" 
-                    accept="image/*" 
-                    capture="environment"
-                    onChange={handleFileChange}
-                    className="hidden"
-                  />
-
+                  <input ref={fileInputRef} type="file" accept="image/*" capture="environment" onChange={handleFileChange} className="hidden" />
                   {customImage ? (
                     <div className="relative rounded-xl overflow-hidden border border-gray-200">
                       <img src={customImage} alt="معاينة" className="w-full h-32 object-cover" />
-                      <button 
-                        onClick={() => setCustomImage(null)}
-                        className="absolute top-2 left-2 rounded-full bg-red-500 text-white p-1 hover:bg-red-600 transition"
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
+                      <button onClick={() => setCustomImage(null)} className="absolute top-2 left-2 rounded-full bg-red-500 text-white p-1 hover:bg-red-600 transition"><X className="h-3 w-3" /></button>
                     </div>
                   ) : (
                     <div className="flex gap-2">
-                      <button 
-                        onClick={() => fileInputRef.current?.click()}
-                        className="flex-1 flex items-center justify-center gap-2 rounded-xl border-2 border-dashed border-gray-300 py-3 text-gray-500 hover:border-[#1B5E3B] hover:text-[#1B5E3B] transition"
-                      >
-                        <ImageIcon className="h-5 w-5" />
-                        <span className="text-sm font-bold">رفع صورة</span>
+                      <button onClick={() => fileInputRef.current?.click()} className="flex-1 flex items-center justify-center gap-2 rounded-xl border-2 border-dashed border-gray-300 py-3 text-gray-500 hover:border-[#1B5E3B] hover:text-[#1B5E3B] transition">
+                        <ImageIcon className="h-5 w-5" /><span className="text-sm font-bold">رفع صورة</span>
                       </button>
-                      <button 
-                        onClick={() => { if(fileInputRef.current) { fileInputRef.current.setAttribute('capture', 'environment'); fileInputRef.current.click(); } }}
-                        className="flex-1 flex items-center justify-center gap-2 rounded-xl border-2 border-dashed border-gray-300 py-3 text-gray-500 hover:border-[#C9A84C] hover:text-[#C9A84C] transition"
-                      >
-                        <Camera className="h-5 w-5" />
-                        <span className="text-sm font-bold">كاميرا</span>
+                      <button onClick={() => { if(fileInputRef.current) { fileInputRef.current.setAttribute('capture', 'environment'); fileInputRef.current.click(); }}} className="flex-1 flex items-center justify-center gap-2 rounded-xl border-2 border-dashed border-gray-300 py-3 text-gray-500 hover:border-[#C9A84C] hover:text-[#C9A84C] transition">
+                        <Camera className="h-5 w-5" /><span className="text-sm font-bold">كاميرا</span>
                       </button>
                     </div>
                   )}
                 </div>
-
-                <button 
-                  onClick={handleAddCustomStyle} 
-                  disabled={!customName.trim() || !customPrice || Number(customPrice) < 0} 
-                  className="w-full rounded-xl bg-[#1B5E3B] py-3 text-base font-bold text-white transition hover:bg-[#144d30] disabled:opacity-40"
-                >
-                  💾 إضافة الشكل
-                </button>
+                <button onClick={handleAddCustomStyle} disabled={!customName.trim() || !customPrice || Number(customPrice) < 0} className="w-full rounded-xl bg-[#1B5E3B] py-3 text-base font-bold text-white transition hover:bg-[#144d30] disabled:opacity-40">💾 إضافة الشكل</button>
               </div>
             )}
           </div>

@@ -1,14 +1,14 @@
-'use client';
+"use client";
 
 // ============================================================
 // El Mahboubi Salon ERP — Tapis (Carpet) Seller Flow (Cart Mode)
 // تدفق البائع لطلبات الزرابي — يُرسل للسلة المشتركة
 // ============================================================
 
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-// ← FIXED: removed conflicting import; we keep the local builder below
-import { useOrder } from "@/features/order-center/context/OrderContext";
+// ← FIXED: use OrderCartContext instead of OrderContext
+import { useOrderCart } from "@/contexts/OrderCartContext";
 import Head from "next/head";
 import {
   ArrowRight, ArrowLeft, Ruler, Scissors, Percent,
@@ -50,7 +50,7 @@ function formatMoney(n: number) {
 }
 
 // ════════════════════════════════════════════════════════════
-// Local builder aligned to ProductResult expected by useOrder
+// Local builder aligned to ProductResult expected by useOrderCart
 // ════════════════════════════════════════════════════════════
 function buildTapisCartItem({
   selectedTapis,
@@ -72,7 +72,7 @@ function buildTapisCartItem({
     unitPrice: selectedTapis.price_per_m2,
     quantity: finalArea,
     totalPrice,
-    image: selectedTapis.image_url ?? "",
+    thumbnailUrl: selectedTapis.image_url ?? "",
     notes,
     addedAt: new Date().toISOString(),
     calculations: {
@@ -98,7 +98,8 @@ function buildTapisCartItem({
 
 export default function TapisOrderFlow() {
   const router = useRouter();
-  const { addToCart } = useOrder();
+  // ← FIXED: use useOrderCart instead of useOrder
+  const { addToCart } = useOrderCart();
   const [tapisList, setTapisList] = useState<Tapis[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedTapis, setSelectedTapis] = useState<Tapis | null>(null);

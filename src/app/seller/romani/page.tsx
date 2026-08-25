@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, Fragment } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
 import { ChevronRight, Loader2 } from "lucide-react";
@@ -12,7 +12,8 @@ import RomaniOrderSummary from "@/components/seller/romani/RomaniOrderSummary";
 
 import { RomaniModel, RomaniColor, RomaniSeddari, RomaniStep } from "@/types/romani.types";
 import { fetchRomaniModels, fetchRomaniColors } from "@/lib/supabase-romani";
-import { useOrder } from "@/features/order-center/context/OrderContext";
+// ← FIXED: use OrderCartContext instead of OrderContext
+import { useOrderCart } from "@/contexts/OrderCartContext";
 import { ProductResult } from "@/features/order-center/types";
 
 /* ═══════════════════════════════════════
@@ -112,7 +113,7 @@ function StepIndicator({ currentStep }: { currentStep: RomaniStep }) {
         const isActive = index === currentIndex;
         const isCompleted = index < currentIndex;
         return (
-          <React.Fragment key={step.key}>
+          <Fragment key={step.key}>
             {index > 0 && (
               <ChevronRight
                 className={`w-4 h-4 ${
@@ -158,7 +159,7 @@ function StepIndicator({ currentStep }: { currentStep: RomaniStep }) {
               </span>
               {step.label}
             </div>
-          </React.Fragment>
+          </Fragment>
         );
       })}
     </div>
@@ -170,7 +171,8 @@ function StepIndicator({ currentStep }: { currentStep: RomaniStep }) {
    ═══════════════════════════════════════ */
 export default function RomaniSalonPage() {
   const router = useRouter();
-  const { addToCart } = useOrder();
+  // ← FIXED: use useOrderCart instead of useOrder
+  const { addToCart } = useOrderCart();
 
   const [step, setStep] = useState<RomaniStep>("model");
   const [models, setModels] = useState<RomaniModel[]>([]);

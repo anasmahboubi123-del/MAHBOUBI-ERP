@@ -2,8 +2,8 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useOrder } from '@/features/order-center/context/OrderContext';
-import { buildSalonCartItem } from '@/contexts/OrderCartContext';
+import { useOrderCart } from '@/contexts/OrderCartContext';          // ← تغيير 1
+import { buildSalonCartItem } from '@/features/order-center/utils/buildSalonCartItem';
 import { OrderDraft, emptyDraft } from '@/lib/types';
 
 import Step01_Fabric from '@/components/salon/Step01_Fabric';
@@ -16,7 +16,7 @@ import Step07_Summary from '@/components/salon/Step07_Summary';
 
 export default function SalonPage() {
   const router = useRouter();
-  const { addToCart } = useOrder();
+  const { addToCart } = useOrderCart();                               // ← تغيير 2
   const [step, setStep] = useState(1);
   const [draft, setDraft] = useState<OrderDraft>(emptyDraft());
 
@@ -34,17 +34,11 @@ export default function SalonPage() {
 
   return (
     <div className="relative min-h-screen overflow-x-hidden">
-      {/* ✅ الخلفية المغربية — ثابتة على كل الشاشة */}
       <div
         className="fixed inset-0 bg-cover bg-center bg-no-repeat z-0"
-        style={{
-          backgroundImage: 'url("/pubic/images/salon-bg.jpg")',
-        }}
+        style={{ backgroundImage: 'url("/images/salon-bg.jpg")' }}
       />
-      {/* ✅ طبقة شفافة بيضاء لضمان وضوح النصوص */}
       <div className="fixed inset-0 bg-[#F5F0E8]/85 z-0" />
-
-      {/* المحتوى فوق الخلفية */}
       <div className="relative z-10">
         {step === 1 && (
           <Step01_Fabric draft={draft} onChange={updateDraft} onNext={() => setStep(2)} />

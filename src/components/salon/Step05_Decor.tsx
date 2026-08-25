@@ -26,26 +26,22 @@ export default function Step05_Decor({ draft, onChange, onNext, onBack }: Step05
   const [loading, setLoading] = useState(true);
   const [items, setItems] = useState<DecorCushionItem[]>(draft.decorItems || []);
 
-  // تعديل السعر
   const [editItemId, setEditItemId] = useState<string | null>(null);
   const [editPriceOpen, setEditPriceOpen] = useState(false);
   const [priceAdminOk, setPriceAdminOk] = useState(false);
   const [newPriceInput, setNewPriceInput] = useState("");
 
-  // تعديل المجموع
   const [totalEditOpen, setTotalEditOpen] = useState(false);
   const [totalAdminOk, setTotalAdminOk] = useState(false);
   const [manualTotal, setManualTotal] = useState("");
   const [totalOverride, setTotalOverride] = useState<number | null>(draft.stage5TotalOverride ?? null);
 
-  // إضافة شكل يدوي
   const [customShapeModalOpen, setCustomShapeModalOpen] = useState(false);
   const [customShapeName, setCustomShapeName] = useState("");
   const [customShapeImage, setCustomShapeImage] = useState<string | null>(null);
   const [customShapeAdminOk, setCustomShapeAdminOk] = useState(false);
   const shapeFileRef = useRef<HTMLInputElement>(null);
 
-  // إضافة خياطة يدوية
   const [customStyleModalOpen, setCustomStyleModalOpen] = useState(false);
   const [customStyleName, setCustomStyleName] = useState("");
   const [customStylePrice, setCustomStylePrice] = useState("");
@@ -53,7 +49,6 @@ export default function Step05_Decor({ draft, onChange, onNext, onBack }: Step05
   const [customStyleAdminOk, setCustomStyleAdminOk] = useState(false);
   const styleFileRef = useRef<HTMLInputElement>(null);
 
-  // جلب من Supabase
   useEffect(() => {
     async function fetchData() {
       setLoading(true);
@@ -68,7 +63,6 @@ export default function Step05_Decor({ draft, onChange, onNext, onBack }: Step05
     fetchData();
   }, []);
 
-  // جميع الأشكال والخياطات (Supabase + يدوية)
   const allShapes: DecorShape[] = [...dbShapes, ...(draft.customDecorShapes || [])];
   const allStyles: StitchStyle[] = [...dbStyles, ...(draft.customDecorStyles || [])];
 
@@ -108,7 +102,6 @@ export default function Step05_Decor({ draft, onChange, onNext, onBack }: Step05
     syncToDraft(updated, totalOverride);
   };
 
-  // ✅ الحساب بالقطعة فقط: عدد القطع × ثمن الخياطة لكل قطعة
   const calcItemTotal = (item: DecorCushionItem): number => {
     return item.count * item.stitchFinalPrice;
   };
@@ -119,7 +112,6 @@ export default function Step05_Decor({ draft, onChange, onNext, onBack }: Step05
     onChange({ decorItems: list, stage5TotalOverride: override, stageTotals: { ...draft.stageTotals, decor: total } });
   };
 
-  // تعديل السعر
   const handleEditPrice = (itemId: string) => {
     const item = items.find(i => i.id === itemId);
     if (!item) return;
@@ -152,7 +144,6 @@ export default function Step05_Decor({ draft, onChange, onNext, onBack }: Step05
     }
   };
 
-  // إضافة شكل يدوي
   const handleShapeFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -177,7 +168,6 @@ export default function Step05_Decor({ draft, onChange, onNext, onBack }: Step05
     setCustomShapeAdminOk(false);
   };
 
-  // إضافة خياطة يدوية
   const handleStyleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -263,7 +253,6 @@ export default function Step05_Decor({ draft, onChange, onNext, onBack }: Step05
                       <button onClick={() => handleDelete(item.id)} className="text-red-400 hover:text-red-600 transition"><Trash2 className="h-4 w-4" /></button>
                     </div>
 
-                    {/* العدد فقط */}
                     <div className="flex items-center gap-3 mb-4">
                       <span className="text-sm text-gray-600">العدد (قطع):</span>
                       <div className="flex items-center gap-2">
@@ -273,20 +262,27 @@ export default function Step05_Decor({ draft, onChange, onNext, onBack }: Step05
                       </div>
                     </div>
 
-                    {/* ✅ الشكل - بطاقات بصور من Supabase */}
                     <div className="mb-4">
                       <label className="mb-2 block text-xs font-bold text-gray-600">الشكل</label>
                       <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
-                        {allShapes.map((shape) => (
-                          <div key={shape.id} className={`relative rounded-xl border-2 p-2 text-center transition cursor-pointer ${item.shapeId === shape.id ? "border-[#C9A84C] bg-[#F5F0E8] shadow-md" : "border-gray-200 bg-white hover:border-[#1B5E3B]/30"}`}>
-                            {shape.isCustom && (
-                              <button onClick={(e) => { e.stopPropagation(); handleDeleteCustomShape(shape.id); }} className="absolute left-1 top-1 z-10 rounded-full bg-red-50 p-0.5 text-red-500 hover:bg-red-100 transition">
-                                <X className="h-2.5 w-2.5" />
-                              </button>
-                            )}
-                            <button onClick={() => handleUpdate(item.id, { shapeId: shape.id, shapeName: shape.name, shapeImage: shape.image_url })} className="w-full">
-                              {item.shapeId === shape.id && (
-                                <div className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-[#1B5E3B] text-white">
+                        {allShapes.map((shape) => {
+                          const isSelected = item.shapeId === shape.id;
+                          return (
+                            <div
+                              key={shape.id}
+                              onClick={() => handleUpdate(item.id, { shapeId: shape.id, shapeName: shape.name, shapeImage: shape.image_url })}
+                              className={`relative rounded-xl border-2 p-2 text-center transition cursor-pointer ${isSelected ? "border-[#C9A84C] bg-[#F5F0E8] shadow-md" : "border-gray-200 bg-white hover:border-[#1B5E3B]/30"}`}
+                              role="button"
+                              tabIndex={0}
+                              onKeyDown={(e) => e.key === 'Enter' && handleUpdate(item.id, { shapeId: shape.id, shapeName: shape.name, shapeImage: shape.image_url })}
+                            >
+                              {shape.isCustom && (
+                                <button onClick={(e) => { e.stopPropagation(); handleDeleteCustomShape(shape.id); }} className="absolute left-1 top-1 z-10 rounded-full bg-red-50 p-0.5 text-red-500 hover:bg-red-100 transition">
+                                  <X className="h-2.5 w-2.5" />
+                                </button>
+                              )}
+                              {isSelected && (
+                                <div className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-[#1B5E3B] text-white z-10">
                                   <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
                                 </div>
                               )}
@@ -294,10 +290,9 @@ export default function Step05_Decor({ draft, onChange, onNext, onBack }: Step05
                                 {shape.image_url ? <img src={shape.image_url} alt={shape.name} className="h-full w-full object-cover" /> : <span className="text-2xl">🌀</span>}
                               </div>
                               <p className="font-bold text-[10px] text-[#0D1F17] truncate">{shape.name}</p>
-                            </button>
-                          </div>
-                        ))}
-                        {/* زر إضافة شكل يدوي */}
+                            </div>
+                          );
+                        })}
                         <button onClick={() => { setCustomShapeModalOpen(true); setCustomShapeAdminOk(false); }} className="flex flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-[#C9A84C]/40 bg-white p-2 text-[#C9A84C] transition hover:border-[#C9A84C] hover:bg-[#C9A84C]/5 min-h-[100px]">
                           <Plus className="h-5 w-5" />
                           <span className="text-[10px] font-bold">شكل يدوي</span>
@@ -305,20 +300,27 @@ export default function Step05_Decor({ draft, onChange, onNext, onBack }: Step05
                       </div>
                     </div>
 
-                    {/* ✅ شكل الخياطة - بطاقات بصور من Supabase */}
                     <div className="mb-4">
                       <label className="mb-2 block text-xs font-bold text-gray-600">شكل الخياطة</label>
                       <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
-                        {allStyles.map((style) => (
-                          <div key={style.id} className={`relative rounded-xl border-2 p-2 text-center transition cursor-pointer ${item.stitchStyleId === style.id ? "border-[#C9A84C] bg-[#F5F0E8] shadow-md" : "border-gray-200 bg-white hover:border-[#1B5E3B]/30"}`}>
-                            {style.isCustom && (
-                              <button onClick={(e) => { e.stopPropagation(); handleDeleteCustomStyle(style.id); }} className="absolute left-1 top-1 z-10 rounded-full bg-red-50 p-0.5 text-red-500 hover:bg-red-100 transition">
-                                <X className="h-2.5 w-2.5" />
-                              </button>
-                            )}
-                            <button onClick={() => handleUpdate(item.id, { stitchStyleId: style.id, stitchStyleName: style.name, stitchStyleImage: style.image_url, stitchPrice: style.price, stitchFinalPrice: style.price })} className="w-full">
-                              {item.stitchStyleId === style.id && (
-                                <div className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-[#1B5E3B] text-white">
+                        {allStyles.map((style) => {
+                          const isSelected = item.stitchStyleId === style.id;
+                          return (
+                            <div
+                              key={style.id}
+                              onClick={() => handleUpdate(item.id, { stitchStyleId: style.id, stitchStyleName: style.name, stitchStyleImage: style.image_url, stitchPrice: style.price, stitchFinalPrice: style.price })}
+                              className={`relative rounded-xl border-2 p-2 text-center transition cursor-pointer ${isSelected ? "border-[#C9A84C] bg-[#F5F0E8] shadow-md" : "border-gray-200 bg-white hover:border-[#1B5E3B]/30"}`}
+                              role="button"
+                              tabIndex={0}
+                              onKeyDown={(e) => e.key === 'Enter' && handleUpdate(item.id, { stitchStyleId: style.id, stitchStyleName: style.name, stitchStyleImage: style.image_url, stitchPrice: style.price, stitchFinalPrice: style.price })}
+                            >
+                              {style.isCustom && (
+                                <button onClick={(e) => { e.stopPropagation(); handleDeleteCustomStyle(style.id); }} className="absolute left-1 top-1 z-10 rounded-full bg-red-50 p-0.5 text-red-500 hover:bg-red-100 transition">
+                                  <X className="h-2.5 w-2.5" />
+                                </button>
+                              )}
+                              {isSelected && (
+                                <div className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-[#1B5E3B] text-white z-10">
                                   <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
                                 </div>
                               )}
@@ -328,16 +330,15 @@ export default function Step05_Decor({ draft, onChange, onNext, onBack }: Step05
                               <p className="font-bold text-[10px] text-[#0D1F17] truncate">{style.name}</p>
                               <div className="flex items-center justify-center gap-1 mt-0.5">
                                 <p className="text-xs font-extrabold text-[#1B5E3B]">{style.price} DH</p>
-                                {item.stitchStyleId === style.id && (
+                                {isSelected && (
                                   <button onClick={(e) => { e.stopPropagation(); handleEditPrice(item.id); }} className="rounded bg-white p-0.5 text-gray-400 hover:text-[#C9A84C] transition">
                                     <Pencil className="h-2.5 w-2.5" />
                                   </button>
                                 )}
                               </div>
-                            </button>
-                          </div>
-                        ))}
-                        {/* زر إضافة خياطة يدوية */}
+                            </div>
+                          );
+                        })}
                         <button onClick={() => { setCustomStyleModalOpen(true); setCustomStyleAdminOk(false); }} className="flex flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-[#C9A84C]/40 bg-white p-2 text-[#C9A84C] transition hover:border-[#C9A84C] hover:bg-[#C9A84C]/5 min-h-[100px]">
                           <Plus className="h-5 w-5" />
                           <span className="text-[10px] font-bold">خياطة يدوية</span>
@@ -345,7 +346,6 @@ export default function Step05_Decor({ draft, onChange, onNext, onBack }: Step05
                       </div>
                     </div>
 
-                    {/* ✅ ملخص الكيدور — فقط عدد × ثمن */}
                     <div className="rounded-lg bg-[#F5F0E8] border border-[#C9A84C]/20 p-3 flex items-center justify-between">
                       <span className="text-sm text-gray-600">{item.count} قطعة × {item.stitchFinalPrice} DH = </span>
                       <span className="font-bold text-[#1B5E3B]">{calcItemTotal(item)} DH</span>
@@ -355,7 +355,6 @@ export default function Step05_Decor({ draft, onChange, onNext, onBack }: Step05
               )}
             </div>
 
-            {/* الملخص الجانبي */}
             <div className="lg:col-span-1">
               <div className="sticky top-24 rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
                 <div className="border-b border-gray-100 bg-[#F5F0E8] px-5 py-3">
@@ -393,7 +392,6 @@ export default function Step05_Decor({ draft, onChange, onNext, onBack }: Step05
         )}
       </div>
 
-      {/* نافذة تعديل السعر */}
       {editPriceOpen && editItemId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
           <div className="relative mx-4 w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl">
@@ -417,7 +415,6 @@ export default function Step05_Decor({ draft, onChange, onNext, onBack }: Step05
         </div>
       )}
 
-      {/* نافذة تعديل المجموع */}
       {totalEditOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
           <div className="relative mx-4 w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl">
@@ -445,7 +442,6 @@ export default function Step05_Decor({ draft, onChange, onNext, onBack }: Step05
         </div>
       )}
 
-      {/* نافذة إضافة شكل يدوي */}
       {customShapeModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
           <div className="relative mx-4 w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl">
@@ -488,7 +484,6 @@ export default function Step05_Decor({ draft, onChange, onNext, onBack }: Step05
         </div>
       )}
 
-      {/* نافذة إضافة خياطة يدوية */}
       {customStyleModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
           <div className="relative mx-4 w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl">
@@ -507,7 +502,7 @@ export default function Step05_Decor({ draft, onChange, onNext, onBack }: Step05
                 </div>
                 <div>
                   <label className="mb-1.5 block text-sm font-semibold text-gray-700">السعر (DH)</label>
-                  <input type="number" dir="ltr" value={customStylePrice} onChange={(e) => setCustomStylePrice(e.target.value)} placeholder="50" className="w-full rounded-xl border border-gray-300 px-4 py-3 text-lg text-[#0D1F17] focus:border-[#1B5E3B] focus:outline-none focus:ring-2 focus:ring-[#1B5E3B]/20" />
+                  <input type="number" dir="ltr" value={customStylePrice} onChange={(e) => setCustomStylePrice(e.target.value)} placeholder="150" className="w-full rounded-xl border border-gray-300 px-4 py-3 text-lg text-[#0D1F17] focus:border-[#1B5E3B] focus:outline-none focus:ring-2 focus:ring-[#1B5E3B]/20" />
                 </div>
                 <div>
                   <label className="mb-1.5 block text-sm font-semibold text-gray-700">صورة (اختياري)</label>

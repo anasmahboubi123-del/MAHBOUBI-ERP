@@ -3,21 +3,85 @@
 import { useEffect, useState, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import {
-  Eye, FileText, Settings, Check, ChevronRight,
-  ArrowRight, Globe,
+  Eye, FileText, Settings, ChevronRight,
+  ArrowRight, Globe, Loader2,
 } from "lucide-react";
-import { supabase } from "@/lib/supabaseClient";
+import { supabase } from "@/lib/supabase";
 import PrintModal from "@/features/order-center/components/PrintModal";
-import type { OrderItem, DocumentType, DocumentLanguage, PrintOptions } from "@/features/order-center/types";
-import { docTitle } from "@/features/order-center/i18n/documents";
 
 const C = { green: "#1B5E38", gold: "#C9A84C", dark: "#0D1F17", cream: "#F5F0E8" };
+
+export type DocumentType = "devis" | "bon_de_commande" | "facture";
+export type DocumentLanguage = "ar" | "fr" | "es" | "it" | "bilingual";
+
+export interface PrintOptions {
+  documentType: DocumentType;
+  printVariant: "client" | "internal";
+  language: DocumentLanguage;
+  includeProductionDetails: boolean;
+  includePrices: boolean;
+  includeCosts: boolean;
+  includeSignatures: boolean;
+  includeQrCode: boolean;
+  includeStamp: boolean;
+  includeLocation: boolean;
+}
+
+interface OrderItemData {
+  id: string;
+  product_type: string;
+  product_name: string;
+  quantity: number;
+  unit_price: number;
+  total_price: number;
+  thumbnail_url: string | null;
+  technical_details: any;
+  cost_breakdown: any;
+}
+
+interface OrderData {
+  id: string;
+  order_number: string | null;  // ← user's custom order number
+  customer_name: string;
+  customer_phone: string;
+  customer_city: string | null;
+  total: number;
+  discount: number;
+  deposit: number;
+  status: string;
+  created_at: string;
+  delivery_expected_date: string | null;
+}
+
+function docTitle(type: DocumentType, lang: DocumentLanguage): string {
+  const titles: Record<DocumentType, Record<DocumentLanguage, string>> = {
+    devis: { ar: "عرض سعر", fr: "Devis", es: "Presupuesto", it: "Preventivo", bilingual: "عرض سعر / Devis" },
+    bon_de_commande: { ar: "بون دي كوموند", fr: "Bon de Commande", es: "Orden de Compra", it: "Ordine d'Acquisto", bilingual: "بون دي كوموند / Bon de Commande" },
+    facture: { ar: "فاتورة", fr: "Facture", es: "Factura", it: "Fattura", bilingual: "فاتورة / Facture" },
+  };
+  return titles[type]?.[lang] || titles[type]?.["ar"] || type;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Date formatter — Arabic locale
+   ═══════════════════════════════════════════════════════════════ */
+function fmtDateAr(dateStr: string | null): string {
+  if (!dateStr) return "";
+  if (/^\d{4}-\d{2}-\d{2}/.test(dateStr)) {
+    try {
+      return new Date(dateStr).toLocaleDateString("ar-MA", {
+        year: "numeric", month: "long", day: "numeric"
+      });
+    } catch { return dateStr; }
+  }
+  return dateStr;
+}
 
 export default function OrderCustomizePage() {
   return (
     <Suspense fallback={
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="animate-spin w-8 h-8 border-2 border-green-600 border-t-transparent rounded-full" />
+        <Loader2 className="w-8 h-8 text-green-600 animate-spin" />
       </div>
     }>
       <OrderCustomizeContent />
@@ -31,11 +95,13 @@ function OrderCustomizeContent() {
   const orderId = searchParams.get("orderId");
   const typeParam = searchParams.get("type") as DocumentType;
 
-  const [order, setOrder] = useState<any>(null);
-  // ← FIX: explicitly typed as OrderItem[]
-  const [items, setItems] = useState<OrderItem[]>([]);
+  const [order, setOrder] = useState<OrderData | null>(null);
+  const [items, setItems] = useState<OrderItemData[]>([]);
   const [loading, setLoading] = useState(true);
+
   const [showPreview, setShowPreview] = useState(false);
+  const [agreedDeliveryDate, setAgreedDeliveryDate] = useState("");
+  const [sellerNotes, setSellerNotes] = useState("");
 
   const [printOptions, setPrintOptions] = useState<PrintOptions>({
     documentType: typeParam || "devis",
@@ -47,42 +113,34 @@ function OrderCustomizeContent() {
     includeSignatures: true,
     includeQrCode: false,
     includeStamp: false,
+    includeLocation: false,
   });
 
-  // ← NEW: agreed delivery date
-  const [agreedDeliveryDate, setAgreedDeliveryDate] = useState("");
-  // ← NEW: seller notes
-  const [sellerNotes, setSellerNotes] = useState("");
-
   useEffect(() => {
-    if (!orderId) return;
-    loadData();
+    if (orderId) fetchOrder(orderId);
   }, [orderId]);
 
-  async function loadData() {
+  async function fetchOrder(id: string) {
     setLoading(true);
-    const [{ data: orderData }, { data: itemsData }] = await Promise.all([
-      supabase.from("orders").select("*").eq("id", orderId).single(),
-      supabase.from("order_items").select("*").eq("order_id", orderId),
-    ]);
+    try {
+      const [{ data: orderData, error: orderErr }, { data: itemsData, error: itemsErr }] = await Promise.all([
+        supabase.from("orders").select("*").eq("id", id).single(),
+        supabase.from("order_items").select("*").eq("order_id", id),
+      ]);
 
-    setOrder(orderData);
-    // ← FIX: properly typed conversion
-    const convertedItems: OrderItem[] = (itemsData || []).map((it: any) => ({
-      id: it.id,
-      orderItemId: it.id,
-      productType: it.product_type,
-      productName: it.product_name,
-      quantity: it.quantity,
-      unitPrice: it.unit_price,
-      totalPrice: it.total_price,
-      details: it.details || {},
-      calculations: it.calculations || {},
-      thumbnailUrl: it.thumbnail_url,
-      addedAt: it.created_at,
-    }));
-    setItems(convertedItems);
-    setLoading(false);
+      if (orderErr) throw orderErr;
+      setOrder(orderData);
+      setItems(itemsData || []);
+
+      // ← FIXED: Format delivery_expected_date in Arabic before setting
+      if (orderData?.delivery_expected_date) {
+        setAgreedDeliveryDate(fmtDateAr(orderData.delivery_expected_date));
+      }
+    } catch (e) {
+      console.error("fetchOrder error:", e);
+    } finally {
+      setLoading(false);
+    }
   }
 
   const toggleOption = (key: keyof PrintOptions) => {
@@ -93,25 +151,44 @@ function OrderCustomizeContent() {
     setPrintOptions((prev) => ({ ...prev, language: lang }));
   };
 
-  const documentTypeLabel =
-    printOptions.documentType === "devis"
-      ? docTitle("devis", printOptions.language)
-      : printOptions.documentType === "bon_de_commande"
-      ? docTitle("bon_de_commande", printOptions.language)
-      : docTitle("facture", printOptions.language);
+  const documentTypeLabel = docTitle(printOptions.documentType, printOptions.language);
+
+  // Convert DB items to PrintModal format
+  const orderItems = items.map((item) => ({
+    id: item.id,
+    productType: item.product_type || "salon",
+    productName: item.product_name || "منتج",
+    quantity: item.quantity || 1,
+    unitPrice: item.unit_price || 0,
+    totalPrice: item.total_price || 0,
+    thumbnailUrl: item.thumbnail_url || undefined,
+    details: item.technical_details || {},
+    calculations: item.cost_breakdown || {},
+  }));
+
+  // ← FIXED: Use order.order_number (user's custom number) instead of UUID
+  const displayOrderNumber = order?.order_number || orderId?.slice(0, 8).toUpperCase() || "—";
 
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="animate-spin w-8 h-8 border-2 border-green-600 border-t-transparent rounded-full" />
+        <Loader2 className="w-8 h-8 text-green-600 animate-spin" />
       </div>
     );
   }
 
   if (!order) {
     return (
-      <div className="min-h-screen flex items-center justify-center text-gray-500 bg-gray-50">
-        لم يتم العثور على الطلب
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+        <div className="bg-white rounded-2xl shadow-xl p-8 max-w-md w-full text-center">
+          <p className="text-red-600 font-bold">لم يتم العثور على الطلب</p>
+          <button
+            onClick={() => router.push("/seller")}
+            className="mt-4 px-6 py-2 bg-green-600 text-white rounded-lg font-bold"
+          >
+            العودة
+          </button>
+        </div>
       </div>
     );
   }
@@ -125,7 +202,7 @@ function OrderCustomizeContent() {
             <span>تخصيص المستند</span>
             <ChevronRight className="w-4 h-4" />
             <span className="font-bold" style={{ color: C.dark }}>
-              طلب #{order.order_number}
+              طلب #{displayOrderNumber}
             </span>
           </div>
           <h1 className="text-2xl font-bold" style={{ color: C.dark }}>
@@ -224,7 +301,7 @@ function OrderCustomizeContent() {
               </div>
             </div>
 
-            {/* ─── Agreed Delivery Date ─── */}
+            {/* Agreed Delivery Date */}
             <div className="bg-amber-50 rounded-xl p-4 border border-amber-200">
               <h3 className="font-bold mb-3 flex items-center gap-2 text-amber-800">
                 <span>📅</span>
@@ -237,10 +314,14 @@ function OrderCustomizeContent() {
                 placeholder="مثال: 20/08/2026 أو 5-7 أسابيع"
                 className="w-full p-3 rounded-lg border-2 border-amber-200 text-right font-bold text-amber-900 bg-white focus:border-amber-500 focus:outline-none transition-colors text-sm"
               />
-              <p className="text-xs text-amber-600 mt-1">سيظهر في بون دي كوموند ويُرسل للزبون</p>
+              <p className="text-xs text-amber-600 mt-1">
+                {order?.delivery_expected_date 
+                  ? `📋 موعد محفوظ: ${fmtDateAr(order.delivery_expected_date)}` 
+                  : "سيظهر في بون دي كوماند ويُرسل للزبون"}
+              </p>
             </div>
 
-            {/* ─── Seller Notes ─── */}
+            {/* Seller Notes */}
             <div className="bg-blue-50 rounded-xl p-4 border border-blue-200">
               <h3 className="font-bold mb-3 flex items-center gap-2 text-blue-800">
                 <span>📝</span>
@@ -280,13 +361,24 @@ function OrderCustomizeContent() {
             <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
               <h3 className="font-bold mb-4">ملخص الطلب</h3>
               <div className="space-y-3">
+                {/* ← FIXED: Show order_number */}
+                <div className="flex justify-between py-2 border-b">
+                  <span className="text-gray-600">رقم الطلب</span>
+                  <span className="font-bold">{displayOrderNumber}</span>
+                </div>
                 <div className="flex justify-between py-2 border-b">
                   <span className="text-gray-600">الزبون</span>
-                  <span className="font-bold">{order.customer_name}</span>
+                  <span className="font-bold">{order.customer_name || "—"}</span>
                 </div>
                 <div className="flex justify-between py-2 border-b">
                   <span className="text-gray-600">الهاتف</span>
-                  <span className="font-bold text-left">{order.customer_phone}</span>
+                  <span className="font-bold text-left">{order.customer_phone || "—"}</span>
+                </div>
+                <div className="flex justify-between py-2 border-b">
+                  <span className="text-gray-600">موعد التسليم المحفوظ</span>
+                  <span className="font-bold" style={{ color: C.gold }}>
+                    {fmtDateAr(order.delivery_expected_date) || "—"}
+                  </span>
                 </div>
                 <div className="flex justify-between py-2 border-b">
                   <span className="text-gray-600">عدد المنتجات</span>
@@ -295,13 +387,13 @@ function OrderCustomizeContent() {
                 <div className="flex justify-between py-2 border-b">
                   <span className="text-gray-600">المجموع</span>
                   <span className="font-bold" style={{ color: C.gold }}>
-                    {order.total?.toFixed(2)} د.م
+                    {order.total?.toFixed(2) || "0.00"} د.م
                   </span>
                 </div>
-                {order.deposit_amount > 0 && (
+                {order.deposit > 0 && (
                   <div className="flex justify-between py-2 border-b">
                     <span className="text-gray-600">العربون</span>
-                    <span className="font-bold">{order.deposit_amount.toFixed(2)} د.م</span>
+                    <span className="font-bold">{order.deposit.toFixed(2)} د.م</span>
                   </div>
                 )}
               </div>
@@ -311,20 +403,20 @@ function OrderCustomizeContent() {
                 <div className="space-y-2">
                   {items.map((item) => (
                     <div
-                      key={item.orderItemId}
+                      key={item.id}
                       className="p-3 rounded-lg border border-gray-100 flex justify-between items-center"
                     >
                       <div className="flex items-center gap-3">
-                        {item.thumbnailUrl && (
-                          <img src={item.thumbnailUrl} alt="" className="w-10 h-10 rounded object-cover" />
+                        {item.thumbnail_url && (
+                          <img src={item.thumbnail_url} alt="" className="w-10 h-10 rounded object-cover" />
                         )}
                         <div>
-                          <p className="font-bold text-sm">{item.productName}</p>
-                          <p className="text-xs text-gray-400">{item.productType}</p>
+                          <p className="font-bold text-sm">{item.product_name}</p>
+                          <p className="text-xs text-gray-400">{item.product_type}</p>
                         </div>
                       </div>
                       <span className="font-bold text-sm">
-                        {item.totalPrice.toFixed(2)} د.م
+                        {item.total_price?.toFixed(2) || "0.00"} د.م
                       </span>
                     </div>
                   ))}
@@ -338,15 +430,15 @@ function OrderCustomizeContent() {
       {/* Print Modal */}
       {showPreview && (
         <PrintModal
-          orderItems={items}
-          orderNumber={order.order_number}
+          orderItems={orderItems}
+          orderNumber={displayOrderNumber}  // ← FIXED: use order_number
           customerName={order.customer_name}
           customerPhone={order.customer_phone}
-          customerCity={order.customer_city}
-          totalAmount={order.total}
-          discountAmount={order.discount_amount}
-          depositAmount={order.deposit_amount}
-          deliveryCost={order.delivery_cost}
+          customerCity={order.customer_city || undefined}
+          totalAmount={order.total || 0}
+          discountAmount={order.discount || 0}
+          depositAmount={order.deposit || 0}
+          deliveryCost={0}
           documentType={printOptions.documentType}
           printOptions={printOptions}
           onClose={() => setShowPreview(false)}

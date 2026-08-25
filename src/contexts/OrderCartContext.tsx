@@ -1,573 +1,370 @@
-'use client';
+"use client";
 
-import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
-import { supabase } from '@/lib/supabase';
+import React, { createContext, useContext, useReducer, useCallback } from "react";
+import { supabase } from "@/lib/supabase";
 
 /* ═══════════════════════════════════════════════════════════════
-   HYBRID ARCHITECTURE:
-   - localStorage: Draft cart (temporary, device-specific, offline)
-   - Supabase: Saved orders (permanent, shared, secure)
+   TYPES — أنواع البيانات
    ═══════════════════════════════════════════════════════════════ */
-
-/* ── Types ── */
-export interface CartItemCalculation {
-  fabricLengthCm?: number;
-  fabricCost?: number;
-  laborCost?: number;
-  cushionsCost?: number;
-  decorCost?: number;
-  extrasCost?: number;
-  formageCost?: number;
-  materialCost?: number;
-  backingCost?: number;
-  edgingCost?: number;
-  seddariTotal?: number;
-  itemsTotal?: number;
-  subtotal: number;
-  discountAmount?: number;
-  finalTotal?: number;
-}
-
-export interface CartItemDetails {
-  notes?: string;
-  fabric?: { id: string; name: string; color?: string; pricePerMeter: number; imageUrl?: string };
-  seddari?: { lengthCm: number; widthCm: number; heightCm: number; heightType?: string; count?: number };
-  stitch?: { id?: string; type: string; price: number };
-  cushions?: { count: number; type: string; unitPrice: number; totalPrice: number };
-  decor?: { type: string; price: number };
-  extras?: Array<{ name: string; price: number }>;
-  formage?: { corners: number; pricePerCorner: number; totalPrice: number };
-  dimensions?: { lengthCm?: number; widthCm?: number; areaSqm?: number; originalLength?: number; originalWidth?: number };
-  material?: { id: string; name: string; pricePerSqm?: number; pricePerMeter?: number; imageUrl?: string };
-  backing?: { type: string; price: number };
-  edging?: { type: string; price: number };
-  cutMarginCm?: number;
-  wastePercent?: number;
-  roundingType?: string;
-  model?: { id: string; name: string; code: string; woodType: string; imageUrl?: string };
-  salonShape?: string;
-  seddars?: Array<{ index: number; lengthCm: number; widthCm: number; heightCm: number; price: number; junctionType?: string }>;
-  woodItems?: Array<{ type: string; name: string; quantity: number; unitPrice: number; totalPrice: number }>;
-  product?: { id: string; name: string; pricePerMeter: number; imageUrl?: string };
-  heightCm?: number;
-  widthCm?: number;
-  foamSeddars?: number[];
-  squareCorners?: number;
-  triangleCorners?: number;
-  squareCornerPrice?: number;
-  triangleCornerPrice?: number;
-  priceAdjustment?: { type: 'discount' | 'increase'; value: number; reason: string };
-  khamiyaShape?: 'solid_piece' | 'cut_middle';
-  aqiq?: { id: string; name: string; pricePerMeter: number };
-  background?: { id: string; name: string; width: number; height: number; meters: number; cost: number };
-  customAdditions?: Array<{ name: string; price: number; image?: string }>;
-  catalogAdditions?: Array<{ id: string; name: string; price: number }>;
-  costEditReasons?: Record<string, string>;
-}
 
 export interface CartItem {
   id: string;
-  productType: 'salon' | 'tapis' | 'bois' | 'wood' | 'foam' | 'bounj' | 'khamiya' | 'store' | 'accessoire' | string;
+  productType: string;           // "salon" | "wood" | "tapis" | "foam" | "khamiya" | ...
   productName: string;
   thumbnailUrl?: string;
-  quantity: number;
   unitPrice: number;
   totalPrice: number;
-  details: CartItemDetails;
-  calculations: CartItemCalculation;
-  addedAt: string;
+  quantity: number;
+  details: Record<string, any>;      // technical_details — كل تفاصيل المنتج
+  calculations: Record<string, any>;   // cost_breakdown — تفصيل التكاليف
 }
 
-export interface OrderCartState {
+export interface CartState {
   items: CartItem[];
   customerInfo: {
     name: string;
     phone: string;
-    address: string;
-    email: string;
+    phone2?: string;
+    email?: string;
+    address?: string;
     city?: string;
   };
   deliveryDate: string;
-  depositAmount: number;
-  discountAmount: number;
-  sellerNotes: string;
-}
-
-export interface SavedOrder {
-  id: string;
-  orderNumber: string;
-  customerName: string;
-  customerPhone: string;
-  totalAmount: number;
-  status: 'draft' | 'confirmed' | 'in_progress' | 'delivered' | 'cancelled';
-  createdAt: string;
-  itemCount: number;
-}
-
-/* ── Helpers ── */
-function generateId(): string {
-  return Math.random().toString(36).substring(2, 15) + Date.now().toString(36);
-}
-
-export function calcSeddariFabricLength(lengthCm: number, heightCm: number): number {
-  return lengthCm + (heightCm * 2);
-}
-
-export function roundCushions(totalCm: number): number {
-  const count = Math.round(totalCm / 100);
-  return Math.max(1, count);
-}
-
-export function formatCurrency(n: number): string {
-  return n.toLocaleString('ar-MA', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' د.م';
-}
-
-export function generateOrderNumber(): string {
-  const now = new Date();
-  const yy = now.getFullYear().toString().slice(-2);
-  const mm = String(now.getMonth() + 1).padStart(2, '0');
-  const dd = String(now.getDate()).padStart(2, '0');
-  const rand = Math.random().toString(36).substring(2, 6).toUpperCase();
-  return `ORD-${yy}${mm}${dd}-${rand}`;
-}
-
-/* ── Builders ── */
-export function buildSalonCartItem(draft: any): CartItem {
-  const fabric = draft.fabric;
-  const seddari = draft.seddari;
-  const stitch = draft.stitch;
-  const cushions = draft.cushions;
-  const decor = draft.decor;
-  const extras = draft.extras || [];
-  const formage = draft.formage;
-
-  const fabricLengthCm = seddari?.lengthCm && seddari?.heightCm
-    ? calcSeddariFabricLength(seddari.lengthCm, seddari.heightCm) : 0;
-  const fabricLengthMeters = fabricLengthCm / 100;
-  const fabricCost = fabric?.pricePerMeter ? fabricLengthMeters * fabric.pricePerMeter : 0;
-  const laborCost = stitch?.price || 0;
-  const cushionsCount = cushions?.totalCm ? roundCushions(cushions.totalCm) : (cushions?.count || 0);
-  const cushionsUnitPrice = cushions?.unitPrice || 0;
-  const cushionsCost = cushionsCount * cushionsUnitPrice;
-  const decorCost = decor?.price || 0;
-  const extrasCost = extras.reduce((sum: number, ex: any) => sum + (ex.price || 0), 0);
-  const formageCost = formage?.corners && formage?.pricePerCorner
-    ? formage.corners * formage.pricePerCorner : 0;
-  const subtotal = fabricCost + laborCost + cushionsCost + decorCost + extrasCost + formageCost;
-
-  return {
-    id: generateId(), productType: 'salon',
-    productName: `صالون — ${fabric?.name || 'غير محدد'}`,
-    thumbnailUrl: fabric?.imageUrl, quantity: 1, unitPrice: subtotal, totalPrice: subtotal,
-    details: {
-      fabric: fabric ? { id: fabric.id, name: fabric.name, color: fabric.color, pricePerMeter: fabric.pricePerMeter, imageUrl: fabric.imageUrl } : undefined,
-      seddari: seddari ? { lengthCm: seddari.lengthCm, widthCm: seddari.widthCm, heightCm: seddari.heightCm, heightType: seddari.heightType } : undefined,
-      stitch: stitch ? { id: stitch.id, type: stitch.type, price: stitch.price } : undefined,
-      cushions: cushionsCount > 0 ? { count: cushionsCount, type: cushions.type || 'قياسي', unitPrice: cushionsUnitPrice, totalPrice: cushionsCost } : undefined,
-      decor: decor ? { type: decor.type, price: decor.price } : undefined,
-      extras: extras.length > 0 ? extras.map((ex: any) => ({ name: ex.name, price: ex.price })) : undefined,
-      formage: formage?.corners > 0 ? { corners: formage.corners, pricePerCorner: formage.pricePerCorner, totalPrice: formageCost } : undefined,
-      notes: draft.notes,
-    },
-    calculations: { fabricLengthCm, fabricCost, laborCost, cushionsCost, decorCost, extrasCost, formageCost, subtotal },
-    addedAt: new Date().toISOString(),
+  financials: {
+    subtotal: number;
+    discount: number;
+    discountReason: string;
+    total: number;
+    deposit: number;
+    remaining: number;
+    paymentMethod: string;
+    notes: string;
   };
+  orderNotes: string;
 }
 
-export function buildTapisCartItem(draft: any): CartItem {
-  const tapis = draft.selectedTapis || draft.material;
-  const calc = draft.calc || draft.dimensions;
-  const finalArea = draft.finalArea || (calc?.originalLength && calc?.originalWidth
-    ? (calc.originalLength + (calc.cutMarginCm || 0) / 100) * (calc.originalWidth + (calc.cutMarginCm || 0) / 100) * (1 + (calc.wastePercent || 0) / 100) : 0);
-  const roundedArea = calc?.rounding === 'half' ? Math.ceil(finalArea * 2) / 2
-    : calc?.rounding === 'one' ? Math.ceil(finalArea) : finalArea;
-  const materialCost = tapis?.pricePerSqm || tapis?.price_per_m2 ? roundedArea * (tapis.pricePerSqm || tapis.price_per_m2) : 0;
+type CartAction =
+  | { type: "ADD_ITEM"; payload: CartItem }
+  | { type: "REMOVE_ITEM"; payload: string }
+  | { type: "UPDATE_QTY"; payload: { id: string; qty: number } }
+  | { type: "UPDATE_NOTES"; payload: { id: string; notes: string } }
+  | { type: "UPDATE_CUSTOMER"; payload: Partial<CartState["customerInfo"]> }
+  | { type: "UPDATE_DELIVERY"; payload: string }
+  | { type: "UPDATE_FINANCIALS"; payload: Partial<CartState["financials"]> }
+  | { type: "UPDATE_ORDER_NOTES"; payload: string }
+  | { type: "CLEAR" }
+  | { type: "LOAD"; payload: CartState };
 
-  return {
-    id: generateId(), productType: 'tapis',
-    productName: `زربية — ${tapis?.name || 'غير محدد'}`,
-    thumbnailUrl: tapis?.imageUrl || tapis?.image_url, quantity: 1, unitPrice: materialCost, totalPrice: materialCost,
-    details: {
-      material: tapis ? { id: tapis.id, name: tapis.name, pricePerSqm: tapis.pricePerSqm || tapis.price_per_m2, imageUrl: tapis.imageUrl || tapis.image_url } : undefined,
-      dimensions: calc ? { originalLength: calc.originalLength, originalWidth: calc.originalWidth, areaSqm: roundedArea } : undefined,
-      cutMarginCm: calc?.cutMarginCm, wastePercent: calc?.wastePercent, roundingType: calc?.rounding,
-      notes: draft.notes,
-    },
-    calculations: { materialCost, subtotal: materialCost },
-    addedAt: new Date().toISOString(),
-  };
-}
+const initialState: CartState = {
+  items: [],
+  customerInfo: { name: "", phone: "" },
+  deliveryDate: "",
+  financials: {
+    subtotal: 0, discount: 0, discountReason: "",
+    total: 0, deposit: 0, remaining: 0,
+    paymentMethod: "cash", notes: "",
+  },
+  orderNotes: "",
+};
 
-export function buildWoodCartItem(draft: any): CartItem {
-  const model = draft.selectedModel;
-  const seddars = draft.seddars || [];
-  const items = draft.items || [];
-  const shape = draft.salonShape || 'straight';
-  const seddariTotal = seddars.reduce((sum: number, s: any) => sum + (s.seddari_price || s.price || 0), 0);
-  const itemsTotal = items.reduce((sum: number, item: any) => sum + (item.total_price || item.price || 0), 0);
-  const subtotal = seddariTotal + itemsTotal;
-
-  return {
-    id: generateId(), productType: 'wood',
-    productName: `عود — ${model?.name || 'غير محدد'}`,
-    thumbnailUrl: model?.image_url || model?.imageUrl, quantity: 1, unitPrice: subtotal, totalPrice: subtotal,
-    details: {
-      model: model ? { id: model.id, name: model.name, code: model.code, woodType: model.wood_type || model.woodType, imageUrl: model.image_url || model.imageUrl } : undefined,
-      salonShape: shape,
-      seddars: seddars.map((s: any, idx: number) => ({
-        index: s.seddari_index || idx + 1, lengthCm: s.length_cm || s.lengthCm,
-        widthCm: s.width_cm || s.widthCm || 70, heightCm: s.height_cm || s.heightCm || 30,
-        price: s.seddari_price || s.price || 0, junctionType: s.junction_type || s.junctionType || 'none',
-      })),
-      woodItems: items.map((item: any) => ({
-        type: item.item_type || item.type, name: item.item_name || item.name,
-        quantity: item.quantity, unitPrice: item.original_price || item.unitPrice || item.price,
-        totalPrice: item.total_price || item.totalPrice || 0,
-      })),
-      notes: draft.notes,
-    },
-    calculations: { seddariTotal, itemsTotal, subtotal },
-    addedAt: new Date().toISOString(),
-  };
-}
-
-export function buildFoamCartItem(draft: any): CartItem {
-  const product = draft.selectedProduct || draft.product;
-  const seddars = draft.seddars || draft.foamSeddars || [];
-  const totalLength = seddars.reduce((sum: number, len: any) => sum + (typeof len === 'number' ? len : (len.length_cm || len.lengthCm || 0) / 100), 0);
-  const seddarsTotal = totalLength * (product?.price_per_meter || product?.pricePerMeter || 0);
-  const hasCorners = draft.hasCorners;
-  const sq = draft.squareCorners || 0;
-  const tri = draft.triangleCorners || 0;
-  const sqTotal = hasCorners ? sq * (product?.square_corner_price || 0) : 0;
-  const triTotal = hasCorners ? tri * (product?.triangle_corner_price || 0) : 0;
-  let subtotal = seddarsTotal + sqTotal + triTotal;
-  const adj = draft.priceAdjustment;
-  if (adj) { if (adj.type === 'discount') subtotal -= adj.value; else subtotal += adj.value; }
-
-  return {
-    id: generateId(), productType: 'foam',
-    productName: `بونج — ${product?.name || 'غير محدد'}`,
-    thumbnailUrl: product?.image_url || product?.imageUrl, quantity: 1, unitPrice: subtotal, totalPrice: subtotal,
-    details: {
-      product: product ? { id: product.id, name: product.name, pricePerMeter: product.price_per_meter || product.pricePerMeter, imageUrl: product.image_url || product.imageUrl } : undefined,
-      heightCm: draft.selectedHeight || draft.heightCm, widthCm: draft.widthCm || 70,
-      foamSeddars: seddars.map((s: any) => typeof s === 'number' ? s : (s.length_cm || s.lengthCm || 0) / 100),
-      squareCorners: hasCorners ? sq : 0, triangleCorners: hasCorners ? tri : 0,
-      squareCornerPrice: product?.square_corner_price, triangleCornerPrice: product?.triangle_corner_price,
-      priceAdjustment: adj, notes: draft.notes,
-    },
-    calculations: { fabricCost: seddarsTotal, laborCost: sqTotal + triTotal, subtotal },
-    addedAt: new Date().toISOString(),
-  };
-}
-
-export function buildKhamiyaCartItem(draft: any): CartItem {
-  const khamiya = draft.selectedKhamiya;
-  const width = draft.width || 2;
-  const height = draft.height || 2.5;
-  const fabricMeters = draft.fabricMeters || Math.ceil(width * 2 * 10) / 10;
-  const shape = draft.shape || 'solid_piece';
-  const sewing = draft.selectedSewing;
-  const aqiq = draft.selectedAqiq;
-  const background = draft.hasBackground ? draft.selectedBackground : null;
-  const bgFabricMeters = draft.bgFabricMeters || Math.ceil((draft.bgWidth || width) * 2 * 10) / 10;
-  const customAdditions = draft.customAdditions || [];
-  const catalogAdditions = draft.selectedCatalogAdditions || [];
-  const catalogItems = draft.catalogAdditions || [];
-
-  const fabricCost = (khamiya?.price_per_m2 || 0) * fabricMeters;
-  const sewingCost = draft.sewingTotalPrice || sewing?.price || 0;
-  const aqiqCost = aqiq ? (aqiq.price_per_meter || 0) * (width * 2) : 0;
-  const bgCost = background ? (background.price_per_m2 || 0) * bgFabricMeters : 0;
-  const customAdditionsCost = customAdditions.reduce((s: number, a: any) => s + (a.price || 0), 0);
-  const catalogAdditionsCost = catalogAdditions.reduce((sum: number, id: string) => {
-    const item = catalogItems.find((a: any) => a.id === id); return sum + (item?.price || 0);
-  }, 0);
-
-  const subtotal = fabricCost + sewingCost + aqiqCost + bgCost + customAdditionsCost + catalogAdditionsCost;
-  const grandTotal = draft.managerOverride ?? subtotal;
-
-  return {
-    id: generateId(), productType: 'khamiya',
-    productName: `خامية — ${khamiya?.name || 'غير محدد'}`,
-    thumbnailUrl: khamiya?.image_url || khamiya?.imageUrl, quantity: 1, unitPrice: grandTotal, totalPrice: grandTotal,
-    details: {
-      fabric: khamiya ? { id: khamiya.id, name: khamiya.name, pricePerMeter: khamiya.price_per_m2 || khamiya.pricePerMeter, imageUrl: khamiya.image_url || khamiya.imageUrl } : undefined,
-      dimensions: { lengthCm: width * 100, widthCm: height * 100, areaSqm: width * height },
-      khamiyaShape: shape,
-      stitch: sewing ? { id: sewing.id, type: sewing.name, price: sewingCost } : undefined,
-      aqiq: aqiq ? { id: aqiq.id, name: aqiq.name, pricePerMeter: aqiq.price_per_meter || aqiq.pricePerMeter } : undefined,
-      background: background ? { id: background.id, name: background.name, width: draft.bgWidth || width, height: draft.bgHeight || height, meters: bgFabricMeters, cost: bgCost } : undefined,
-      customAdditions: customAdditions.length > 0 ? customAdditions.map((a: any) => ({ name: a.name, price: a.price, image: a.image })) : undefined,
-      catalogAdditions: catalogAdditions.length > 0 ? catalogAdditions.map((id: string) => {
-        const item = catalogItems.find((a: any) => a.id === id); return { id, name: item?.name, price: item?.price };
-      }) : undefined,
-      costEditReasons: draft.costEditReasons, notes: draft.notes,
-    },
-    calculations: { fabricCost, laborCost: sewingCost, materialCost: aqiqCost, backingCost: bgCost, extrasCost: customAdditionsCost + catalogAdditionsCost, subtotal, discountAmount: grandTotal - subtotal, finalTotal: grandTotal },
-    addedAt: new Date().toISOString(),
-  };
-}
-
-export function buildSimpleCartItem(productType: string, productName: string, draft: any): CartItem {
-  const qty = draft.quantity || 1;
-  const unitPrice = draft.unitPrice || draft.price || 0;
-  const subtotal = unitPrice * qty;
-  return {
-    id: generateId(), productType, productName,
-    thumbnailUrl: draft.imageUrl || draft.image_url, quantity: qty, unitPrice, totalPrice: subtotal,
-    details: { notes: draft.notes, ...draft.details },
-    calculations: { subtotal },
-    addedAt: new Date().toISOString(),
-  };
+function cartReducer(state: CartState, action: CartAction): CartState {
+  switch (action.type) {
+    case "ADD_ITEM": {
+      const exists = state.items.find((i) => i.id === action.payload.id);
+      if (exists) return state;
+      return { ...state, items: [...state.items, action.payload] };
+    }
+    case "REMOVE_ITEM":
+      return { ...state, items: state.items.filter((i) => i.id !== action.payload) };
+    case "UPDATE_QTY": {
+      return {
+        ...state,
+        items: state.items.map((i) =>
+          i.id === action.payload.id
+            ? { ...i, quantity: action.payload.qty, totalPrice: i.unitPrice * action.payload.qty }
+            : i
+        ),
+      };
+    }
+    case "UPDATE_NOTES": {
+      return {
+        ...state,
+        items: state.items.map((i) =>
+          i.id === action.payload.id ? { ...i, details: { ...i.details, notes: action.payload.notes } } : i
+        ),
+      };
+    }
+    case "UPDATE_CUSTOMER":
+      return { ...state, customerInfo: { ...state.customerInfo, ...action.payload } };
+    case "UPDATE_DELIVERY":
+      return { ...state, deliveryDate: action.payload };
+    case "UPDATE_FINANCIALS":
+      return { ...state, financials: { ...state.financials, ...action.payload } };
+    case "UPDATE_ORDER_NOTES":
+      return { ...state, orderNotes: action.payload };
+    case "CLEAR":
+      return initialState;
+    case "LOAD":
+      return action.payload;
+    default:
+      return state;
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   CONTEXT
+   CONTEXT — السياق
    ═══════════════════════════════════════════════════════════════ */
 
 interface OrderCartContextValue {
-  // ── Draft Cart (localStorage) ──
-  cart: OrderCartState;
+  cart: CartState;
   addToCart: (item: CartItem) => void;
   removeFromCart: (itemId: string) => void;
-  updateQuantity: (itemId: string, quantity: number) => void;
-  updateCustomerInfo: (info: Partial<OrderCartState['customerInfo']>) => void;
+  updateItemQuantity: (itemId: string, quantity: number) => void;
+  updateItemNotes: (itemId: string, notes: string) => void;
+  getCartTotals: () => {
+    subtotal: number; discount: number; total: number;
+    deposit: number; remaining: number; itemCount: number;
+  };
+  updateCustomerInfo: (info: Partial<CartState["customerInfo"]>) => void;
   updateDeliveryDate: (date: string) => void;
-  updateDepositAmount: (amount: number) => void;
-  updateDiscount: (amount: number) => void;
-  updateSellerNotes: (notes: string) => void;
+  updateFinancials: (f: Partial<CartState["financials"]>) => void;
+  updateOrderNotes: (notes: string) => void;
   clearCart: () => void;
-  getCartTotals: () => { subtotal: number; discount: number; deposit: number; total: number; remaining: number };
-  itemCount: number;
-
-  // ── Supabase Operations ──
-  saveOrder: (status?: 'draft' | 'confirmed') => Promise<{ success: boolean; orderId?: string; error?: string }>;
-  loadSavedOrders: () => Promise<SavedOrder[]>;
-  getOrderDetails: (orderId: string) => Promise<any>;
+  saveOrder: (status: "draft" | "confirmed") => Promise<{ success: boolean; orderId?: string; error?: string }>;
+  loadOrder: (orderId: string) => Promise<boolean>;
+  searchCustomer: (query: string) => Promise<any[]>;
 }
 
-const OrderCartContext = createContext<OrderCartContextValue | undefined>(undefined);
-const STORAGE_KEY = 'el_mahboubi_order_cart';
-
-const EMPTY_STATE: OrderCartState = {
-  items: [],
-  customerInfo: { name: '', phone: '', address: '', email: '', city: '' },
-  deliveryDate: '',
-  depositAmount: 0,
-  discountAmount: 0,
-  sellerNotes: '',
-};
+const OrderCartContext = createContext<OrderCartContextValue | null>(null);
 
 export function OrderCartProvider({ children }: { children: React.ReactNode }) {
-  // 1. Always start with the same empty state on server AND client
-  const [cart, setCart] = useState<OrderCartState>(EMPTY_STATE);
-
-  // 2. After mount, hydrate from localStorage (safe, runs only in browser)
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        setCart({
-          items: parsed.items || [],
-          customerInfo: parsed.customerInfo || { name: '', phone: '', address: '', email: '', city: '' },
-          deliveryDate: parsed.deliveryDate || '',
-          depositAmount: parsed.depositAmount || 0,
-          discountAmount: parsed.discountAmount || 0,
-          sellerNotes: parsed.sellerNotes || '',
-        });
-      }
-    } catch {
-      /* ignore corrupt storage */
-    }
-  }, []);
-
-  // 3. Persist changes back to localStorage
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(cart));
-    } catch {
-      /* ignore */
-    }
-  }, [cart]);
+  const [cart, dispatch] = useReducer(cartReducer, initialState);
 
   const addToCart = useCallback((item: CartItem) => {
-    setCart((prev) => ({ ...prev, items: [...prev.items, item] }));
+    dispatch({ type: "ADD_ITEM", payload: item });
   }, []);
 
   const removeFromCart = useCallback((itemId: string) => {
-    setCart((prev) => ({ ...prev, items: prev.items.filter((i) => i.id !== itemId) }));
+    dispatch({ type: "REMOVE_ITEM", payload: itemId });
   }, []);
 
-  const updateQuantity = useCallback((itemId: string, quantity: number) => {
-    if (quantity < 1) return;
-    setCart((prev) => ({
-      ...prev,
-      items: prev.items.map((i) => i.id === itemId ? { ...i, quantity, totalPrice: i.unitPrice * quantity } : i),
-    }));
+  const updateItemQuantity = useCallback((itemId: string, quantity: number) => {
+    dispatch({ type: "UPDATE_QTY", payload: { id: itemId, qty: quantity } });
   }, []);
 
-  const updateCustomerInfo = useCallback((info: Partial<OrderCartState['customerInfo']>) => {
-    setCart((prev) => ({ ...prev, customerInfo: { ...prev.customerInfo, ...info } }));
-  }, []);
-
-  const updateDeliveryDate = useCallback((date: string) => {
-    setCart((prev) => ({ ...prev, deliveryDate: date }));
-  }, []);
-
-  const updateDepositAmount = useCallback((amount: number) => {
-    setCart((prev) => ({ ...prev, depositAmount: Math.max(0, amount) }));
-  }, []);
-
-  const updateDiscount = useCallback((amount: number) => {
-    setCart((prev) => ({ ...prev, discountAmount: Math.max(0, amount) }));
-  }, []);
-
-  const updateSellerNotes = useCallback((notes: string) => {
-    setCart((prev) => ({ ...prev, sellerNotes: notes }));
-  }, []);
-
-  const clearCart = useCallback(() => {
-    setCart(EMPTY_STATE);
+  const updateItemNotes = useCallback((itemId: string, notes: string) => {
+    dispatch({ type: "UPDATE_NOTES", payload: { id: itemId, notes } });
   }, []);
 
   const getCartTotals = useCallback(() => {
-    const subtotal = cart.items.reduce((sum, item) => sum + item.totalPrice, 0);
-    const discount = cart.discountAmount || 0;
+    const subtotal = cart.items.reduce((sum, i) => sum + (Number(i.totalPrice) || 0), 0);
+    const discount = cart.financials.discount || 0;
     const total = Math.max(0, subtotal - discount);
-    const deposit = cart.depositAmount || 0;
+    const deposit = cart.financials.deposit || 0;
     const remaining = Math.max(0, total - deposit);
-    return { subtotal, discount, deposit, total, remaining };
-  }, [cart]);
+    return { subtotal, discount, total, deposit, remaining, itemCount: cart.items.length };
+  }, [cart.items, cart.financials.discount, cart.financials.deposit]);
 
-  const itemCount = cart.items.length;
+  const updateCustomerInfo = useCallback((info: Partial<CartState["customerInfo"]>) => {
+    dispatch({ type: "UPDATE_CUSTOMER", payload: info });
+  }, []);
 
-  /* ── Supabase: Save Order ── */
-  const saveOrder = useCallback(async (status: 'draft' | 'confirmed' = 'draft') => {
-    try {
-      const totals = getCartTotals();
-      const orderNumber = generateOrderNumber();
+  const updateDeliveryDate = useCallback((date: string) => {
+    dispatch({ type: "UPDATE_DELIVERY", payload: date });
+  }, []);
 
-      // Get current user
-      const { data: { user } } = await supabase.auth.getUser();
+  const updateFinancials = useCallback((f: Partial<CartState["financials"]>) => {
+    dispatch({ type: "UPDATE_FINANCIALS", payload: f });
+  }, []);
 
-      // 1. Insert order
-      const { data: order, error: orderError } = await supabase
-        .from('orders')
-        .insert({
-          order_number: orderNumber,
-          customer_name: cart.customerInfo.name,
-          customer_phone: cart.customerInfo.phone,
-          customer_address: cart.customerInfo.address,
-          customer_email: cart.customerInfo.email,
-          customer_city: cart.customerInfo.city,
-          delivery_date: cart.deliveryDate || null,
-          deposit_amount: totals.deposit,
-          discount_amount: totals.discount,
-          subtotal: totals.subtotal,
-          total_amount: totals.total,
-          remaining_amount: totals.remaining,
-          seller_notes: cart.sellerNotes,
-          seller_id: user?.id || null,
-          status,
-          created_at: new Date().toISOString(),
-        })
-        .select()
-        .single();
+  const updateOrderNotes = useCallback((notes: string) => {
+    dispatch({ type: "UPDATE_ORDER_NOTES", payload: notes });
+  }, []);
 
-      if (orderError || !order) throw orderError || new Error('فشل حفظ الطلب');
+  const clearCart = useCallback(() => {
+    dispatch({ type: "CLEAR" });
+  }, []);
 
-      // 2. Insert items — kind added to satisfy NOT NULL constraint
-      const { error: itemsError } = await supabase
-        .from('order_items')
-        .insert(
-          cart.items.map((item) => ({
-            order_id: order.id,
-            kind: item.productType,              // ← FIX: required by DB NOT NULL
-            product_type: item.productType,
-            product_name: item.productName,
-            thumbnail_url: item.thumbnailUrl,
-            quantity: item.quantity,
-            unit_price: item.unitPrice,
-            total_price: item.totalPrice,
-            details: item.details,
-            calculations: item.calculations,
-          }))
-        );
-
-      if (itemsError) throw itemsError;
-
-      // 3. Clear local draft
-      clearCart();
-
-      return { success: true, orderId: order.id };
-    } catch (err: any) {
-      console.error('Save order error:', err);
-      return { success: false, error: err.message || 'فشل حفظ الطلب' };
-    }
-  }, [cart, getCartTotals, clearCart]);
-
-  /* ── Supabase: Load Saved Orders ── */
-  const loadSavedOrders = useCallback(async (): Promise<SavedOrder[]> => {
+  /* ─── البحث عن الزبائن ─── */
+  const searchCustomer = useCallback(async (query: string): Promise<any[]> => {
+    if (!query || query.length < 2) return [];
     try {
       const { data, error } = await supabase
-        .from('orders')
-        .select('id, order_number, customer_name, customer_phone, total_amount, status, created_at, order_items(count)')
-        .order('created_at', { ascending: false })
-        .limit(50);
-
+        .from("customers")
+        .select("id, name, phone, phone2, email, address, city")
+        .or(`name.ilike.%${query}%,phone.ilike.%${query}%`)
+        .limit(10);
       if (error) throw error;
-
-      return (data || []).map((row: any) => ({
-        id: row.id,
-        orderNumber: row.order_number,
-        customerName: row.customer_name,
-        customerPhone: row.customer_phone,
-        totalAmount: row.total_amount,
-        status: row.status,
-        createdAt: row.created_at,
-        itemCount: row.order_items?.[0]?.count || 0,
-      }));
-    } catch (err) {
-      console.error('Load orders error:', err);
+      return data || [];
+    } catch (e) {
+      console.error("searchCustomer error:", e);
       return [];
     }
   }, []);
 
-  /* ── Supabase: Get Order Details ── */
-  const getOrderDetails = useCallback(async (orderId: string) => {
+  /* ═══════════════════════════════════════════════════════════════
+     SAVE ORDER — حفظ الطلب في جدولين
+     ═══════════════════════════════════════════════════════════════ */
+  const saveOrder = useCallback(
+    async (status: "draft" | "confirmed"): Promise<{ success: boolean; orderId?: string; error?: string }> => {
+      try {
+        const totals = getCartTotals();
+
+        // ─── 1. حفظ رأس الطلب في "orders" ───
+        const orderPayload: Record<string, any> = {
+          customer_name: cart.customerInfo.name || "زبون",
+          customer_phone: cart.customerInfo.phone || "",
+          customer_phone2: cart.customerInfo.phone2 || null,
+          customer_email: cart.customerInfo.email || null,
+          customer_address: cart.customerInfo.address || null,
+          customer_city: cart.customerInfo.city || null,
+          delivery_expected_date: cart.deliveryDate || null,
+          subtotal: Number(totals.subtotal) || 0,
+          discount: Number(totals.discount) || 0,
+          discount_reason: cart.financials.discountReason || null,
+          total: Number(totals.total) || 0,
+          deposit: Number(totals.deposit) || 0,
+          remaining: Number(totals.remaining) || 0,
+          payment_method: cart.financials.paymentMethod || "cash",
+          status,
+          notes: cart.financials.notes || null,
+          order_notes: cart.orderNotes || null,
+        };
+
+        console.log("[saveOrder] Order payload:", orderPayload);
+
+        const { data: orderData, error: orderError } = await supabase
+          .from("orders")
+          .insert(orderPayload)
+          .select("id")
+          .single();
+
+        if (orderError) {
+          console.error("[saveOrder] orders insert error:", orderError);
+          return {
+            success: false,
+            error: `فشل حفظ رأس الطلب: ${orderError.message} (كود: ${orderError.code})`,
+          };
+        }
+
+        const orderId = orderData?.id;
+        if (!orderId) {
+          return { success: false, error: "لم يُرجع Supabase معرف الطلب بعد الحفظ" };
+        }
+
+        console.log("[saveOrder] Order created:", orderId);
+
+        // ─── 2. حفظ المنتجات في "order_items" ───
+        if (cart.items.length > 0) {
+          const orderItems = cart.items.map((item) => ({
+            order_id: orderId,
+            kind: item.productType || "salon",
+            label: item.productName || "منتج",           // ← FIXED: عمود label المطلوب
+            product_type: item.productType || "salon",
+            product_name: item.productName || "منتج",
+            thumbnail_url: item.thumbnailUrl || null,
+            quantity: Number(item.quantity) || 1,
+            unit_price: Number(item.unitPrice) || 0,
+            total_price: Number(item.totalPrice) || 0,
+            technical_details: item.details || {},
+            cost_breakdown: item.calculations || {},
+            item_notes: item.details?.notes || null,
+          }));
+
+          console.log("[saveOrder] Items payload:", orderItems);
+
+          const { error: itemsError } = await supabase
+            .from("order_items")
+            .insert(orderItems);
+
+          if (itemsError) {
+            console.error("[saveOrder] order_items insert error:", itemsError);
+            // حذف الطلب إذا فشلت المنتجات
+            await supabase.from("orders").delete().eq("id", orderId);
+            return {
+              success: false,
+              error: `فشل حفظ المنتجات: ${itemsError.message} (كود: ${itemsError.code})`,
+            };
+          }
+        }
+
+        // مسح السلة بعد النجاح
+        dispatch({ type: "CLEAR" });
+        console.log("[saveOrder] Success! OrderId:", orderId);
+        return { success: true, orderId };
+      } catch (e: any) {
+        console.error("[saveOrder] Unhandled error:", e);
+        return {
+          success: false,
+          error: e?.message || e?.error_description || "خطأ غير معروف في حفظ الطلب",
+        };
+      }
+    },
+    [cart, getCartTotals]
+  );
+
+  /* ─── تحميل طلب موجود ─── */
+  const loadOrder = useCallback(async (orderId: string): Promise<boolean> => {
     try {
-      const [{ data: order }, { data: items }] = await Promise.all([
-        supabase.from('orders').select('*').eq('id', orderId).single(),
-        supabase.from('order_items').select('*').eq('order_id', orderId),
-      ]);
-      return { order, items };
-    } catch (err) {
-      console.error('Get order details error:', err);
-      return null;
+      const { data: order, error: orderError } = await supabase
+        .from("orders")
+        .select("*, order_items(*)")
+        .eq("id", orderId)
+        .single();
+
+      if (orderError || !order) throw orderError;
+
+      const items = (order.order_items || []).map((item: any) => ({
+        id: item.id,
+        productType: item.kind || item.product_type || "salon",
+        productName: item.product_name || item.label || "منتج",
+        thumbnailUrl: item.thumbnail_url,
+        quantity: item.quantity,
+        unitPrice: item.unit_price,
+        totalPrice: item.total_price,
+        details: item.technical_details || {},
+        calculations: item.cost_breakdown || {},
+      }));
+
+      dispatch({
+        type: "LOAD",
+        payload: {
+          items,
+          customerInfo: {
+            name: order.customer_name || "",
+            phone: order.customer_phone || "",
+            phone2: order.customer_phone2 || "",
+            email: order.customer_email || "",
+            address: order.customer_address || "",
+            city: order.customer_city || "",
+          },
+          deliveryDate: order.delivery_expected_date || "",
+          financials: {
+            subtotal: order.subtotal || 0,
+            discount: order.discount || 0,
+            discountReason: order.discount_reason || "",
+            total: order.total || 0,
+            deposit: order.deposit || 0,
+            remaining: order.remaining || 0,
+            paymentMethod: order.payment_method || "cash",
+            notes: order.notes || "",
+          },
+          orderNotes: order.order_notes || "",
+        },
+      });
+      return true;
+    } catch (e) {
+      console.error("loadOrder error:", e);
+      return false;
     }
   }, []);
 
   return (
     <OrderCartContext.Provider
       value={{
-        cart,
-        addToCart,
-        removeFromCart,
-        updateQuantity,
-        updateCustomerInfo,
-        updateDeliveryDate,
-        updateDepositAmount,
-        updateDiscount,
-        updateSellerNotes,
-        clearCart,
-        getCartTotals,
-        itemCount,
-        saveOrder,
-        loadSavedOrders,
-        getOrderDetails,
+        cart, addToCart, removeFromCart, updateItemQuantity, updateItemNotes,
+        getCartTotals, updateCustomerInfo, updateDeliveryDate, updateFinancials,
+        updateOrderNotes, clearCart, saveOrder, loadOrder, searchCustomer,
       }}
     >
       {children}
@@ -577,6 +374,6 @@ export function OrderCartProvider({ children }: { children: React.ReactNode }) {
 
 export function useOrderCart() {
   const ctx = useContext(OrderCartContext);
-  if (!ctx) throw new Error('useOrderCart must be used within OrderCartProvider');
+  if (!ctx) throw new Error("useOrderCart must be used within OrderCartProvider");
   return ctx;
 }

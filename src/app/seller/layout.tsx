@@ -3,15 +3,16 @@
 import React, { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { OrderProvider, useOrder } from "@/features/order-center/context/OrderContext";
+import { OrderCartProvider, useOrderCart } from "@/contexts/OrderCartContext";
+import { OrderProvider } from "@/features/order-center/context/OrderContext";  // ← ADD THIS
 import { ShoppingCart, ClipboardList, Package, Home, Store, Calculator, X } from "lucide-react";
 
 const C = { green: "#1B5E38", gold: "#C9A84C", dark: "#0D1F17", cream: "#FAFAF8" };
 
 function SellerLayoutInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const orderCtx = useOrder() as any;
-  const itemCount = orderCtx.itemCount || orderCtx.orders?.length || 0;
+  const { getCartTotals } = useOrderCart();
+  const { itemCount } = getCartTotals();
 
   const [calcOpen, setCalcOpen] = useState(false);
   const [display, setDisplay] = useState("0");
@@ -175,8 +176,10 @@ function SellerLayoutInner({ children }: { children: React.ReactNode }) {
 
 export default function SellerLayout({ children }: { children: React.ReactNode }) {
   return (
-    <OrderProvider>
-      <SellerLayoutInner>{children}</SellerLayoutInner>
-    </OrderProvider>
+    <OrderCartProvider>
+      <OrderProvider>  {/* ← ADD THIS WRAPPER */}
+        <SellerLayoutInner>{children}</SellerLayoutInner>
+      </OrderProvider>
+    </OrderCartProvider>
   );
 }

@@ -25,9 +25,12 @@ export default function Step02_SeddariForm({ draft, onChange, onNext, onBack }: 
   const [fabricAdminOk, setFabricAdminOk] = useState(false);
   const [manualFabricTotal, setManualFabricTotal] = useState("");
 
+  // تتبع السدادر التي تستخدم ارتفاع مخصص
+  const [customHeights, setCustomHeights] = useState<Record<string, boolean>>({});
+
   /* ── حساب استهلاك الثوب التلقائي للسداري العادي ── */
   const calcAutoFabric = (s: SeddariEntry): number => {
-    // ✅ استهلاك الثوب = الطول + (2 × الارتفاع)
+    // استهلاك الثوب = الطول + (2 × الارتفاع)
     const base = s.length + (2 * s.height);
     return Math.ceil(base);
   };
@@ -37,19 +40,19 @@ export default function Step02_SeddariForm({ draft, onChange, onNext, onBack }: 
     const newSeddari: SeddariEntry = {
       id: `sd-${Date.now()}`,
       type: "normal",
-      length: 200,
+      length: 0,           // ← فارغ — يجب على البائع إدخاله
       width: 70,
       height: 30,
       fabricConsumption: 0,
       hasFormaja: false,
     };
-    newSeddari.fabricConsumption = calcAutoFabric(newSeddari);
+    // لا نحسب الاستهلاك إلا بعد إدخال الطول
     const updated = [...seddars, newSeddari];
     setSeddars(updated);
     syncToDraft(updated, draft.seddarsFabricTotalOverride);
   };
 
-  /* ── ✅ إضافة فورمجة جديدة ── */
+  /* ── إضافة فورمجة جديدة ── */
   const handleAddFormaja = () => {
     const newFormaja: SeddariEntry = {
       id: `fm-${Date.now()}`,
@@ -57,8 +60,9 @@ export default function Step02_SeddariForm({ draft, onChange, onNext, onBack }: 
       length: 0,
       width: 0,
       height: 0,
-      fabricConsumption: 250, // ✅ افتراضي 250 سم
+      fabricConsumption: 250, // افتراضي 250 سم
       hasFormaja: true,
+      shape: "square",        // ← الشكل يخص الفورمجة فقط
     };
     const updated = [...seddars, newFormaja];
     setSeddars(updated);
@@ -72,7 +76,9 @@ export default function Step02_SeddariForm({ draft, onChange, onNext, onBack }: 
       const next = { ...s, ...patch } as SeddariEntry;
       // إذا كان سداري عادي وتم تغيير الأبعاد → إعادة حساب
       if (next.type === "normal" && ("length" in patch || "height" in patch)) {
-        next.fabricConsumption = calcAutoFabric(next);
+        if (next.length > 0 && next.height > 0) {
+          next.fabricConsumption = calcAutoFabric(next);
+        }
       }
       return next;
     });
@@ -84,6 +90,12 @@ export default function Step02_SeddariForm({ draft, onChange, onNext, onBack }: 
   const handleDelete = (id: string) => {
     const updated = seddars.filter((s) => s.id !== id);
     setSeddars(updated);
+    // نظف حالة الارتفاع المخصص
+    setCustomHeights(prev => {
+      const copy = { ...prev };
+      delete copy[id];
+      return copy;
+    });
     syncToDraft(updated, draft.seddarsFabricTotalOverride);
   };
 
@@ -121,7 +133,14 @@ export default function Step02_SeddariForm({ draft, onChange, onNext, onBack }: 
 
   const normalCount = seddars.filter((s) => ("type" in s && s.type === "normal")).length;
   const formajaCount = seddars.filter((s) => ("type" in s && s.type === "formaja")).length;
-  const canProceed = normalCount > 0 && seddars.every((s) => s.fabricConsumption > 0);
+
+  // التحقق: كل سداري عادي يجب أن يكون طوله > 0 وارتفاعه > 0
+  const canProceed = normalCount > 0 && seddars.every((s) => {
+    if (s.type === "normal") {
+      return s.length > 0 && s.width > 0 && s.height > 0 && s.fabricConsumption > 0;
+    }
+    return s.fabricConsumption > 0;
+  });
 
   return (
     <div className="min-h-screen bg-[#F5F0E8]">
@@ -141,7 +160,7 @@ export default function Step02_SeddariForm({ draft, onChange, onNext, onBack }: 
       </div>
 
       <div className="mx-auto max-w-5xl px-4 py-6">
-        {/* ✅ أزرار الإضافة */}
+        {/* أزرار الإضافة */}
         <div className="mb-6 grid grid-cols-2 gap-3">
           <button onClick={handleAddNormal} className="flex items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-[#1B5E3B]/30 bg-white py-4 text-[#1B5E3B] transition hover:border-[#1B5E3B] hover:bg-[#F5F0E8]">
             <Plus className="h-5 w-5" /><span className="font-bold">إضافة سداري جديد</span>
@@ -160,7 +179,7 @@ export default function Step02_SeddariForm({ draft, onChange, onNext, onBack }: 
           <div className="space-y-4">
             {seddars.map((s, idx) => (
               <div key={s.id} className={`rounded-2xl border p-5 shadow-sm ${s.type === "formaja" ? "border-[#C9A84C]/40 bg-[#C9A84C]/5" : "border-gray-200 bg-white"}`}>
-                {/* ✅ عنوان مختلف حسب النوع */}
+                {/* عنوان مختلف حسب النوع */}
                 <div className="mb-4 flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     {s.type === "formaja" ? (
@@ -177,24 +196,67 @@ export default function Step02_SeddariForm({ draft, onChange, onNext, onBack }: 
                   </button>
                 </div>
 
-                {/* ✅ محتوى مختلف حسب النوع */}
+                {/* محتوى مختلف حسب النوع */}
                 {s.type === "normal" ? (
-                  /* ── سداري عادي ── */
+                  /* ── سداري عادي ── لا يوجد حقل شكل هنا */
                   <>
                     <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
                       <div>
                         <label className="mb-1.5 block text-xs font-semibold text-gray-600">الطول (سم)</label>
-                        <input type="number" min={50} value={s.length} onChange={(e) => handleUpdate(s.id, { length: Number(e.target.value) })} className="w-full rounded-xl border-2 border-gray-200 px-3 py-2.5 text-center font-bold text-[#0D1F17] focus:border-[#1B5E3B] focus:outline-none" />
+                        <input 
+                          type="number" 
+                          min={1} 
+                          value={s.length || ""} 
+                          onChange={(e) => handleUpdate(s.id, { length: Number(e.target.value) })} 
+                          className="w-full rounded-xl border-2 border-gray-200 px-3 py-2.5 text-center font-bold text-[#0D1F17] focus:border-[#1B5E3B] focus:outline-none" 
+                          placeholder="أدخل الطول"
+                        />
                       </div>
                       <div>
                         <label className="mb-1.5 block text-xs font-semibold text-gray-600">العرض (سم)</label>
-                        <input type="number" min={30} value={s.width} onChange={(e) => handleUpdate(s.id, { width: Number(e.target.value) })} className="w-full rounded-xl border-2 border-gray-200 px-3 py-2.5 text-center font-bold text-[#0D1F17] focus:border-[#1B5E3B] focus:outline-none" />
+                        <input type="number" min={1} value={s.width} onChange={(e) => handleUpdate(s.id, { width: Number(e.target.value) })} className="w-full rounded-xl border-2 border-gray-200 px-3 py-2.5 text-center font-bold text-[#0D1F17] focus:border-[#1B5E3B] focus:outline-none" />
                       </div>
                       <div>
                         <label className="mb-1.5 block text-xs font-semibold text-gray-600">الارتفاع (سم)</label>
-                        <select value={s.height} onChange={(e) => handleUpdate(s.id, { height: Number(e.target.value) })} className="w-full rounded-xl border-2 border-gray-200 px-3 py-2.5 text-center font-bold text-[#0D1F17] focus:border-[#1B5E3B] focus:outline-none">
-                          <option value={20}>20</option><option value={30}>30</option><option value={50}>50</option>
-                        </select>
+                        {!customHeights[s.id] ? (
+                          <select 
+                            value={s.height} 
+                            onChange={(e) => {
+                              const val = Number(e.target.value);
+                              if (val === -1) {
+                                setCustomHeights(prev => ({ ...prev, [s.id]: true }));
+                              } else {
+                                handleUpdate(s.id, { height: val });
+                              }
+                            }} 
+                            className="w-full rounded-xl border-2 border-gray-200 px-3 py-2.5 text-center font-bold text-[#0D1F17] focus:border-[#1B5E3B] focus:outline-none"
+                          >
+                            <option value={30}>30</option>
+                            <option value={50}>50</option>
+                            <option value={70}>70</option>
+                            <option value={-1}>أخرى...</option>
+                          </select>
+                        ) : (
+                          <div className="flex gap-2">
+                            <input 
+                              type="number" 
+                              min={1} 
+                              value={s.height || ""} 
+                              onChange={(e) => handleUpdate(s.id, { height: Number(e.target.value) })} 
+                              className="w-full rounded-xl border-2 border-[#C9A84C] px-3 py-2.5 text-center font-bold text-[#0D1F17] focus:border-[#1B5E3B] focus:outline-none" 
+                              placeholder="ادخل الارتفاع"
+                            />
+                            <button 
+                              onClick={() => {
+                                setCustomHeights(prev => ({ ...prev, [s.id]: false }));
+                                handleUpdate(s.id, { height: 30 });
+                              }}
+                              className="rounded-xl border border-gray-200 px-3 text-xs font-bold text-gray-500 hover:bg-gray-50 whitespace-nowrap"
+                            >
+                              إلغاء
+                            </button>
+                          </div>
+                        )}
                       </div>
                       <div>
                         <label className="mb-1.5 block text-xs font-semibold text-gray-600">استهلاك الثوب (سم)</label>
@@ -202,22 +264,54 @@ export default function Step02_SeddariForm({ draft, onChange, onNext, onBack }: 
                       </div>
                     </div>
                     <div className="mt-3 flex items-center gap-2 text-xs text-gray-400 bg-gray-50 rounded-lg px-3 py-2 w-fit">
-                      <span className="font-mono">{s.length} + (2×{s.height}) = </span>
+                      <span className="font-mono">{s.length || 0} + (2×{s.height}) = </span>
                       <span className="font-bold text-[#1B5E3B]">{s.fabricConsumption} سم</span>
                     </div>
                   </>
                 ) : (
-                  /* ── ✅ فورمجة منفصلة ── */
+                  /* ── فورمجة منفصلة ── هنا يوجد حقل الشكل */
                   <div className="flex flex-col gap-3">
-                    <div className="max-w-xs">
-                      <label className="mb-1.5 block text-xs font-semibold text-[#C9A84C]">استهلاك الثوب (سم)</label>
-                      <input 
-                        type="number" 
-                        min={0} 
-                        value={s.fabricConsumption} 
-                        onChange={(e) => handleUpdate(s.id, { fabricConsumption: Number(e.target.value) })} 
-                        className="w-full rounded-xl border-2 border-[#C9A84C] px-3 py-2.5 text-center font-bold text-[#0D1F17] focus:border-[#C9A84C] focus:outline-none" 
-                      />
+                    <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
+                      <div className="md:col-span-2">
+                        <label className="mb-1.5 block text-xs font-semibold text-[#C9A84C]">الشكل</label>
+                        <div className="flex gap-2">
+                          <select 
+                            value={s.shape === 'custom' ? 'custom' : (s.shape || 'square')} 
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              if (val === 'custom') {
+                                handleUpdate(s.id, { shape: 'custom', shapeCustom: '' });
+                              } else {
+                                handleUpdate(s.id, { shape: val, shapeCustom: undefined });
+                              }
+                            }}
+                            className="w-full rounded-xl border-2 border-[#C9A84C] px-3 py-2.5 text-center font-bold text-[#0D1F17] focus:border-[#C9A84C] focus:outline-none"
+                          >
+                            <option value="square">⬜ مربع</option>
+                            <option value="triangle">🔺 مثلث</option>
+                            <option value="custom">✏️ أخرى...</option>
+                          </select>
+                          {s.shape === 'custom' && (
+                            <input 
+                              type="text" 
+                              value={s.shapeCustom || ''} 
+                              onChange={(e) => handleUpdate(s.id, { shapeCustom: e.target.value })}
+                              placeholder="مثال: L، دائري..."
+                              className="w-full rounded-xl border-2 border-[#C9A84C] px-3 py-2.5 text-center text-sm font-bold text-[#0D1F17] focus:border-[#C9A84C] focus:outline-none"
+                            />
+                          )}
+                        </div>
+                      </div>
+                      <div>
+                        <label className="mb-1.5 block text-xs font-semibold text-[#C9A84C]">استهلاك الثوب (سم)</label>
+                        <input 
+                          type="number" 
+                          min={0} 
+                          value={s.fabricConsumption} 
+                          onChange={(e) => handleUpdate(s.id, { fabricConsumption: Number(e.target.value) })} 
+                          className="w-full rounded-xl border-2 border-[#C9A84C] px-3 py-2.5 text-center font-bold text-[#0D1F17] focus:border-[#C9A84C] focus:outline-none" 
+                        />
+                      </div>
                     </div>
                     <p className="text-xs text-gray-400">افتراضي: 250 سم — قابل للتعديل</p>
                   </div>

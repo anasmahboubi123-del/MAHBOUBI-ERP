@@ -10,12 +10,14 @@ export interface FabricItem {
 /* ─── السداري ─── */
 export interface Seddari {
   id: string;
-  type?: "normal" | "formaja";  // ← جديد: تمييز السداري العادي عن الفورمجة
+  type?: "normal" | "formaja";  // ← تمييز السداري العادي عن الفورمجة
   length: number;      // cm
   width: number;       // cm - افتراضي 70
-  height: number;      // cm - 20/30/50
+  height: number;      // cm - 30/50/70 أو مخصص
   fabricConsumption: number; // استهلاك الثوب بالسم
   hasFormaja: boolean; // هل يوجد فورمجة؟
+  shape?: string;              // ← جديد: شكل السداري (مربع، مثلث، نص مخصص...)
+  shapeCustom?: string;        // ← جديد: نص الشكل المخصص
 }
 
 /* ─── شكل خياطة (من قاعدة البيانات أو يدوي) ─── */
@@ -33,7 +35,7 @@ export interface StitchStyle {
   image_url: string | null;
   gallery: string[] | null;
   description: string | null;
-  isCustom?: boolean;  // ← جديد: شكل يدوي مخصص للطلبية
+  isCustom?: boolean;  // ← شكل يدوي مخصص للطلبية
 }
 
 /* ─── خياطة السداري ─── */
@@ -192,7 +194,7 @@ export interface OrderDraft {
   summaryViewMode?: 'detailed' | 'compact';
   discount?: number;
 
-  // ← جديد: أشكال خياطة يدوية مخصصة للطلبية
+  // أشكال خياطة يدوية مخصصة للطلبية
   customStitchStyles?: StitchStyle[];
   customCushionStyles?: StitchStyle[];
   customDecorStyles?: StitchStyle[];
@@ -217,7 +219,6 @@ export const emptyDraft = (): OrderDraft => ({
   totalOverride: null,
   deposit: 0,
   customer: { name: '', phone: '', deliveryDate: '', notes: '' },
-  // ← جديد
   customStitchStyles: [],
   customCushionStyles: [],
   customDecorStyles: [],

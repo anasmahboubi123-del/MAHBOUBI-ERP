@@ -2,7 +2,8 @@
 
 import { useState, useMemo, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { useOrder } from "@/features/order-center/context/OrderContext";
+// ← FIXED: use OrderCartContext instead of OrderContext
+import { useOrderCart } from "@/contexts/OrderCartContext";
 import { buildKhamiyaCartItem } from "@/features/order-center/utils/buildKhamiyaCartItem";
 import { supabase, updateRow } from "@/lib/supabase";
 import { uploadImage } from "@/lib/supabase";
@@ -466,7 +467,8 @@ function CostPanel({
    ═══════════════════════════════════════ */
 export default function KhamiyaPage() {
   const router = useRouter();
-  const { addToCart } = useOrder();
+  // ← FIXED: use useOrderCart instead of useOrder
+  const { addToCart } = useOrderCart();
   const [step, setStep] = useState(1);
 
   // Supabase data

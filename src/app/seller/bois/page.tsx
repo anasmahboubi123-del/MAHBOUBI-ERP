@@ -7,7 +7,8 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { useOrder } from '@/features/order-center/context/OrderContext';
+// ← FIXED: use OrderCartContext instead of OrderContext
+import { useOrderCart } from '@/contexts/OrderCartContext';
 import { buildWoodCartItem } from "@/features/order-center/utils/buildWoodCartItem";
 import {
   ChevronLeft, ChevronRight, Plus, Minus, Trash2, Save, Printer,
@@ -62,7 +63,8 @@ const STEPS = [
 
 export default function WoodSellerFlow() {
   const router = useRouter();
-  const { addToCart } = useOrder();
+  // ← FIXED: use useOrderCart instead of useOrder
+  const { addToCart } = useOrderCart();
   const [step, setStep] = useState(0);
   const [models, setModels] = useState<WoodPricingModel[]>([]);
   const [loading, setLoading] = useState(true);
@@ -794,7 +796,6 @@ function SummaryStep({ flowState, calculation, onModifyPrice }: {
                 {flowState.priceModified && flowState.finalPrice ? flowState.finalPrice : calculation.final_total} درهم
               </span>
             </div>
-            {/* ❌ REMOVED: التسبيق والباقي — يُعرضان في OrderWizard فقط */}
           </div>
         </div>
       </div>

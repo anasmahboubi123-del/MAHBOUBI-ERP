@@ -5,9 +5,10 @@ import type { DocumentType, DocumentLanguage } from "../types";
 
 export type DocType = "devis" | "bon_de_commande" | "facture" | "work_order";
 
+// ✅ UPDATED: New fallback conditions from user
 const FALLBACK_CONDITIONS: Record<string, string[]> = {
   devis: [
-    "1. عرض السعر صالح لمدة 15 يومًا.",
+    "1. عرض السعر صالح لمدة 15 يوماً.",
     "2. الأسعار قابلة للتغيير بعد انتهاء مدة صلاحية العرض.",
     "3. عرض السعر لا يعتبر فاتورة ولا أمر شراء.",
     "4. لا يبدأ التصنيع إلا بعد تأكيد الطلب ودفع العربون.",
@@ -19,22 +20,16 @@ const FALLBACK_CONDITIONS: Record<string, string[]> = {
     "1. دفع العربون إلزامي لبدء التصنيع.",
     "2. العربون غير قابل للاسترجاع بعد بدء التصنيع.",
     "3. يبدأ العمل فقط بعد استلام العربون.",
-    "4. لا يمكن تعديل:",
-    "    * المقاسات.",
-    "    * نوع الثوب.",
-    "    * نوع البونج.",
-    "    * نوع الخشب.",
-    "    * التشطيبات.",
-    "        بعد بدء التصنيع.",
-    "5. مدة التصنيع القصوى 90 يومًا .",
+    "4. لا يمكن تعديل المقاسات أو نوع الثوب أو نوع البونج أو نوع الخشب أو التشطيبات بعد بدء التصنيع.",
+    "5. مدة التصنيع القصوى 90 يوماً.",
     "6. تاريخ التسليم هو تاريخ تقديري وقد يتغير في الحالات الاستثنائية.",
     "7. يجب دفع المبلغ المتبقي بالكامل قبل الاستلام أو التسليم.",
     "8. يجب على العميل فحص المنتج عند الاستلام.",
     "9. في حالة القوة القاهرة قد يتم تمديد مدة الإنجاز مع إشعار العميل.",
   ],
   facture: [
-    "1. الفاتورة تثبت عملية البيع النهائية.",
-    "2. يجب دفع المبلغ المتبقي قبل التسليم إذا لم يكن مدفوعًا.",
+    "1. الفاتورة تُثبت عملية البيع النهائية.",
+    "2. يجب دفع المبلغ المتبقي قبل التسليم إذا لم يكن مدفوعاً.",
     "3. للاستفسار أو خدمة ما بعد البيع يمكن التواصل عبر معلومات الاتصال الموجودة في الفاتورة.",
   ],
   work_order: [
@@ -51,7 +46,6 @@ export async function getDocumentConditions(
   const key = docType in FALLBACK_CONDITIONS ? docType : "devis";
 
   try {
-    // تحديد العمود حسب اللغة
     let column: string;
     if (lang === "fr") {
       column = `${docType}_conditions_fr`;
@@ -74,12 +68,10 @@ export async function getDocumentConditions(
     const raw = (data as any)[column];
     if (!raw) return FALLBACK_CONDITIONS[key];
 
-    // إذا كان نصاً (مفصول بـ \n)
     if (typeof raw === "string") {
       return raw.split("\n").filter(Boolean);
     }
 
-    // إذا كان مصفوفة
     if (Array.isArray(raw)) return raw;
 
     return FALLBACK_CONDITIONS[key];
@@ -98,7 +90,6 @@ export async function getAllDocumentConditions(): Promise<Record<string, string>
       .maybeSingle();
 
     if (error || !data) {
-      // Return fallback as joined strings
       return {
         devis_conditions: FALLBACK_CONDITIONS.devis.join("\n"),
         bc_conditions: FALLBACK_CONDITIONS.bon_de_commande.join("\n"),

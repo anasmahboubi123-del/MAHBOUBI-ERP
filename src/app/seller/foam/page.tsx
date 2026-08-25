@@ -7,7 +7,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { useOrder } from '@/features/order-center/context/OrderContext';
+import { useOrderCart } from '@/contexts/OrderCartContext';
 import { buildFoamCartItem } from '@/features/order-center/utils/buildFoamCartItem';
 import Head from 'next/head';
 import type { FoamProduct, FoamProductHeight } from '@/types/foam-types';
@@ -52,7 +52,7 @@ const HEIGHT_DESCRIPTIONS: Record<number, string> = {
 
 export default function FoamSellerPage() {
   const router = useRouter();
-  const { addToCart } = useOrder();
+  const { addToCart } = useOrderCart();
 
   // ─── State ───────────────────────────────────────────────
   const [currentStep, setCurrentStep] = useState(1);

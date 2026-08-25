@@ -69,6 +69,8 @@ interface OrderContextValue {
   };
   addToCart: (product: ProductResult) => void;
   removeFromCart: (id: string) => void;
+  updateItemQuantity: (id: string, quantity: number) => void;
+  updateItemNotes: (id: string, notes: string) => void;
   clearCart: () => void;
   updateCustomer: (patch: Partial<Customer>) => void;
   updateDelivery: (patch: Partial<Delivery>) => void;
@@ -89,7 +91,7 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
   const [discountReason, setDiscountReason] = useState("");
 
   /* ─── totals ─── */
-  const subtotal = cart.items.reduce((s, it) => s + (Number(it.totalPrice) || 0), 0);
+  const subtotal = cart.items.reduce((s: number, it: OrderItem) => s + (Number(it.totalPrice) || 0), 0);
   const discount = Number(cart.financial.discountAmount) || 0;
   const delivery = Number(cart.financial.deliveryCost) || 0;
   const total = Math.max(0, subtotal - discount + delivery);
@@ -105,11 +107,34 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
       orderItemId: uid(),
       addedAt: new Date().toISOString(),
     };
-    setCart((prev) => ({ ...prev, items: [...prev.items, item] }));
+    setCart((prev: CartState) => ({ ...prev, items: [...prev.items, item] }));
   }, []);
 
   const removeFromCart = useCallback((id: string) => {
-    setCart((prev) => ({ ...prev, items: prev.items.filter((i) => i.orderItemId !== id) }));
+    setCart((prev: CartState) => ({ ...prev, items: prev.items.filter((i: OrderItem) => i.orderItemId !== id) }));
+  }, []);
+
+  /* ✅ NEW: update quantity & recalculate totalPrice */
+  const updateItemQuantity = useCallback((id: string, quantity: number) => {
+    if (quantity < 1) return;
+    setCart((prev: CartState) => ({
+      ...prev,
+      items: prev.items.map((i: OrderItem) =>
+        i.orderItemId === id
+          ? { ...i, quantity, totalPrice: Number(i.unitPrice) * quantity }
+          : i
+      ),
+    }));
+  }, []);
+
+  /* ✅ NEW: update line notes */
+  const updateItemNotes = useCallback((id: string, notes: string) => {
+    setCart((prev: CartState) => ({
+      ...prev,
+      items: prev.items.map((i: OrderItem) =>
+        i.orderItemId === id ? { ...i, lineNotes: notes } : i
+      ),
+    }));
   }, []);
 
   const clearCart = useCallback(() => {
@@ -119,7 +144,7 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
 
   /* ─── customer ─── */
   const updateCustomer = useCallback((patch: Partial<Customer>) => {
-    setCart((prev) => ({
+    setCart((prev: CartState) => ({
       ...prev,
       customer: { ...prev.customer, ...patch },
     }));
@@ -127,7 +152,7 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
 
   /* ─── delivery ─── */
   const updateDelivery = useCallback((patch: Partial<Delivery>) => {
-    setCart((prev) => ({
+    setCart((prev: CartState) => ({
       ...prev,
       delivery: { ...prev.delivery, ...patch } as Partial<Delivery>,
     }));
@@ -135,7 +160,7 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
 
   /* ─── financial ─── */
   const applyDiscount = useCallback((amount: number, reason?: string) => {
-    setCart((prev) => ({
+    setCart((prev: CartState) => ({
       ...prev,
       financial: { ...prev.financial, discountAmount: Number(amount) || 0, discountInput: String(amount) },
     }));
@@ -143,14 +168,14 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const applyDeposit = useCallback((amount: number) => {
-    setCart((prev) => ({
+    setCart((prev: CartState) => ({
       ...prev,
       financial: { ...prev.financial, depositAmount: Number(amount) || 0, depositInput: String(amount) },
     }));
   }, []);
 
   const updateDeliveryCost = useCallback((cost: number) => {
-    setCart((prev) => ({
+    setCart((prev: CartState) => ({
       ...prev,
       financial: { ...prev.financial, deliveryCost: Number(cost) || 0 },
     }));
@@ -158,7 +183,7 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
 
   /* ─── notes ─── */
   const updateNotes = useCallback((key: keyof CartNotes, value: string) => {
-    setCart((prev) => ({
+    setCart((prev: CartState) => ({
       ...prev,
       notes: { ...prev.notes, [key]: value },
     }));
@@ -194,10 +219,8 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
       setIsSubmitting(true);
 
       try {
-        // 1. Generate order number
         const orderNumber = await getNextOrderNumber();
 
-        // 2. Create order — ✅ كل القيم محوّلة لـ Number
         const { data: order, error: orderError } = await supabase
           .from("orders")
           .insert({
@@ -227,16 +250,15 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
 
         if (orderError || !order) throw orderError;
 
-        // 3. Create order items — ✅ كل القيم numbers
-        const itemsPayload = cart.items.map((item) => ({
+        const itemsPayload = cart.items.map((item: OrderItem) => ({
           order_id: order.id,
           kind: item.productType || "product",
           label: item.productName || "منتج",
           product_type: item.productType,
           product_name: item.productName,
-          quantity: Math.round(Number(item.quantity) || 0),        // ✅ integer
-          unit_price: Number(item.unitPrice) || 0,                   // ✅ number
-          total_price: Number(item.totalPrice) || 0,                 // ✅ number
+          quantity: Math.round(Number(item.quantity) || 0),
+          unit_price: Number(item.unitPrice) || 0,
+          total_price: Number(item.totalPrice) || 0,
           details: item.details || {},
           calculations: item.calculations || {},
           production_details: item.productionDetails || {},
@@ -270,6 +292,8 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
         cartTotals,
         addToCart,
         removeFromCart,
+        updateItemQuantity,
+        updateItemNotes,
         clearCart,
         updateCustomer,
         updateDelivery,

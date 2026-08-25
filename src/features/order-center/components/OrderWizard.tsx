@@ -3,17 +3,11 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  ShoppingCart,
-  User,
-  DollarSign,
-  FileText,
-  CheckCircle,
-  Plus,
-  Settings,
+  ShoppingCart, User, DollarSign, FileText, CheckCircle,
+  Plus, Settings, Printer, ArrowRight, ArrowLeft, Trash2,
 } from "lucide-react";
-import { useOrder } from "../context/OrderContext";
-import { CustomerPanel } from "./CustomerPanel";
-import { FinancialPanel } from "./FinancialPanel";
+// ← FIXED: use OrderCartContext instead of OrderContext
+import { useOrderCart } from "@/contexts/OrderCartContext";
 
 const C = { green: "#1B5E38", gold: "#C9A84C", dark: "#0D1F17", cream: "#F5F0E8" };
 
@@ -24,21 +18,187 @@ const STEPS = [
   { key: "review", label: "المراجعة", icon: FileText },
 ];
 
-// Simple cart review component inline
+/* ═══════════════════════════════════════════════════════════════
+   Customer Panel
+   ═══════════════════════════════════════════════════════════════ */
+function CustomerPanel() {
+  const { cart, updateCustomerInfo, updateDeliveryDate } = useOrderCart();
+  return (
+    <div className="max-w-xl mx-auto space-y-6">
+      <h2 className="text-2xl font-bold" style={{ color: C.dark }}>بيانات الزبون</h2>
+      <div className="space-y-4">
+        <div>
+          <label className="block text-sm font-bold text-gray-700 mb-2">الاسم الكامل *</label>
+          <input
+            type="text"
+            value={cart.customerInfo.name}
+            onChange={(e) => updateCustomerInfo({ name: e.target.value })}
+            placeholder="اسم الزبون"
+            className="w-full px-4 py-3 rounded-xl border-2 border-gray-200 focus:border-[#1B5E3B] focus:outline-none text-right"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-bold text-gray-700 mb-2">رقم الهاتف *</label>
+          <input
+            type="tel"
+            value={cart.customerInfo.phone}
+            onChange={(e) => updateCustomerInfo({ phone: e.target.value })}
+            placeholder="06XXXXXXXX"
+            className="w-full px-4 py-3 rounded-xl border-2 border-gray-200 focus:border-[#1B5E3B] focus:outline-none text-left"
+            dir="ltr"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-bold text-gray-700 mb-2">هاتف ثانوي</label>
+          <input
+            type="tel"
+            value={cart.customerInfo.phone2 || ""}
+            onChange={(e) => updateCustomerInfo({ phone2: e.target.value })}
+            placeholder="06XXXXXXXX"
+            className="w-full px-4 py-3 rounded-xl border-2 border-gray-200 focus:border-[#1B5E3B] focus:outline-none text-left"
+            dir="ltr"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-bold text-gray-700 mb-2">المدينة</label>
+          <input
+            type="text"
+            value={cart.customerInfo.city || ""}
+            onChange={(e) => updateCustomerInfo({ city: e.target.value })}
+            placeholder="الدار البيضاء"
+            className="w-full px-4 py-3 rounded-xl border-2 border-gray-200 focus:border-[#1B5E3B] focus:outline-none text-right"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-bold text-gray-700 mb-2">العنوان</label>
+          <input
+            type="text"
+            value={cart.customerInfo.address || ""}
+            onChange={(e) => updateCustomerInfo({ address: e.target.value })}
+            placeholder="عنوان التوصيل"
+            className="w-full px-4 py-3 rounded-xl border-2 border-gray-200 focus:border-[#1B5E3B] focus:outline-none text-right"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-bold text-gray-700 mb-2">موعد التسليم المتوقع *</label>
+          <input
+            type="date"
+            value={cart.deliveryDate}
+            onChange={(e) => updateDeliveryDate(e.target.value)}
+            className="w-full px-4 py-3 rounded-xl border-2 border-gray-200 focus:border-[#1B5E3B] focus:outline-none text-left"
+            dir="ltr"
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Financial Panel
+   ═══════════════════════════════════════════════════════════════ */
+function FinancialPanel() {
+  const { cart, updateFinancials, getCartTotals } = useOrderCart();
+  const totals = getCartTotals();
+
+  const handleDiscountChange = (val: string) => {
+    const discount = parseFloat(val) || 0;
+    const total = Math.max(0, totals.subtotal - discount);
+    const remaining = Math.max(0, total - totals.deposit);
+    updateFinancials({ discount, total, remaining });
+  };
+
+  const handleDepositChange = (val: string) => {
+    const deposit = parseFloat(val) || 0;
+    const remaining = Math.max(0, totals.total - deposit);
+    updateFinancials({ deposit, remaining });
+  };
+
+  return (
+    <div className="max-w-xl mx-auto space-y-6">
+      <h2 className="text-2xl font-bold" style={{ color: C.dark }}>التفاصيل المالية</h2>
+      <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
+        <div className="flex justify-between py-2 border-b">
+          <span className="text-gray-600">المجموع الفرعي</span>
+          <span className="font-bold">{totals.subtotal.toFixed(2)} د.م</span>
+        </div>
+        <div>
+          <label className="block text-sm font-bold text-gray-700 mb-2">الخصم (د.م)</label>
+          <input
+            type="number"
+            min="0"
+            value={cart.financials.discount || ""}
+            onChange={(e) => handleDiscountChange(e.target.value)}
+            className="w-full px-4 py-3 rounded-xl border-2 border-gray-200 focus:border-[#1B5E3B] focus:outline-none text-left"
+            dir="ltr"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-bold text-gray-700 mb-2">العربون (د.م)</label>
+          <input
+            type="number"
+            min="0"
+            value={cart.financials.deposit || ""}
+            onChange={(e) => handleDepositChange(e.target.value)}
+            className="w-full px-4 py-3 rounded-xl border-2 border-gray-200 focus:border-[#1B5E3B] focus:outline-none text-left"
+            dir="ltr"
+          />
+        </div>
+        <div className="flex justify-between py-2 border-b">
+          <span className="text-gray-600">المجموع بعد الخصم</span>
+          <span className="font-bold" style={{ color: C.gold }}>{totals.total.toFixed(2)} د.م</span>
+        </div>
+        <div className="flex justify-between py-2">
+          <span className="text-gray-600">المتبقي</span>
+          <span className="font-bold text-red-600">{totals.remaining.toFixed(2)} د.م</span>
+        </div>
+        <div>
+          <label className="block text-sm font-bold text-gray-700 mb-2">طريقة الدفع</label>
+          <select
+            value={cart.financials.paymentMethod}
+            onChange={(e) => updateFinancials({ paymentMethod: e.target.value })}
+            className="w-full px-4 py-3 rounded-xl border-2 border-gray-200 focus:border-[#1B5E3B] focus:outline-none text-right"
+          >
+            <option value="cash">نقدي</option>
+            <option value="card">بطاقة بنكية</option>
+            <option value="transfer">حوالة بنكية</option>
+            <option value="cheque">شيك</option>
+          </select>
+        </div>
+        <div>
+          <label className="block text-sm font-bold text-gray-700 mb-2">ملاحظات مالية</label>
+          <textarea
+            value={cart.financials.notes || ""}
+            onChange={(e) => updateFinancials({ notes: e.target.value })}
+            placeholder="أي ملاحظات إضافية..."
+            rows={3}
+            className="w-full px-4 py-3 rounded-xl border-2 border-gray-200 focus:border-[#1B5E3B] focus:outline-none text-right resize-none"
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Cart Review Panel
+   ═══════════════════════════════════════════════════════════════ */
 function CartReviewPanel() {
-  const { cart, cartTotals, removeFromCart } = useOrder();
+  const { cart, removeFromCart, getCartTotals } = useOrderCart();
+  const totals = getCartTotals();
+
   return (
     <div className="max-w-xl mx-auto space-y-4">
       <h2 className="text-2xl font-bold" style={{ color: C.dark }}>محتوى السلة</h2>
       {cart.items.length === 0 ? (
-        <div className="text-center py-12 text-gray-400">
+        <div className="text-center py-12 text-gray-400 bg-white rounded-xl border border-gray-200">
           <ShoppingCart className="w-12 h-12 mx-auto mb-3 opacity-30" />
           <p>السلة فارغة</p>
         </div>
       ) : (
         <div className="space-y-3">
           {cart.items.map((item) => (
-            <div key={item.orderItemId} className="bg-white rounded-xl border border-gray-200 p-4 flex justify-between items-center">
+            <div key={item.id} className="bg-white rounded-xl border border-gray-200 p-4 flex justify-between items-center">
               <div className="flex items-center gap-3">
                 {item.thumbnailUrl && (
                   <img src={item.thumbnailUrl} alt="" className="w-12 h-12 rounded-lg object-cover" />
@@ -51,10 +211,10 @@ function CartReviewPanel() {
               <div className="text-left">
                 <p className="font-bold">{item.totalPrice.toFixed(2)} د.م</p>
                 <button
-                  onClick={() => removeFromCart(item.orderItemId)}
-                  className="text-xs text-red-500 hover:text-red-700"
+                  onClick={() => removeFromCart(item.id)}
+                  className="text-xs text-red-500 hover:text-red-700 flex items-center gap-1 mt-1"
                 >
-                  حذف
+                  <Trash2 className="w-3 h-3" /> حذف
                 </button>
               </div>
             </div>
@@ -62,7 +222,7 @@ function CartReviewPanel() {
           <div className="bg-white rounded-xl border border-gray-200 p-4">
             <div className="flex justify-between font-bold text-lg">
               <span>المجموع</span>
-              <span style={{ color: C.gold }}>{cartTotals.subtotal.toFixed(2)} د.م</span>
+              <span style={{ color: C.gold }}>{totals.subtotal.toFixed(2)} د.م</span>
             </div>
           </div>
         </div>
@@ -71,24 +231,34 @@ function CartReviewPanel() {
   );
 }
 
+/* ═══════════════════════════════════════════════════════════════
+   Order Wizard
+   ═══════════════════════════════════════════════════════════════ */
 export function OrderWizard() {
   const router = useRouter();
-  const { cart, cartTotals, createOrder, clearCart, isSubmitting } = useOrder();
+  const { cart, getCartTotals, saveOrder, clearCart } = useOrderCart();
   const [step, setStep] = useState(0);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [savedOrder, setSavedOrder] = useState<{ id: string; orderNumber: string; status: "draft" | "confirmed" } | null>(null);
 
+  const totals = getCartTotals();
+
   const canProceed = () => {
-    if (step === 1) {
-      return !!cart.customer.name.trim() && !!cart.customer.phone.trim() && !!cart.delivery.expectedDate;
-    }
     if (step === 0) return cart.items.length > 0;
+    if (step === 1) return !!cart.customerInfo.name.trim() && !!cart.customerInfo.phone.trim() && !!cart.deliveryDate;
     return true;
   };
 
   const handleSave = async (status: "draft" | "confirmed") => {
-    const result = await createOrder(status);
-    if (result) {
-      setSavedOrder({ id: result.id, orderNumber: result.orderNumber, status });
+    setIsSubmitting(true);
+    const result = await saveOrder(status);
+    setIsSubmitting(false);
+    if (result.success && result.orderId) {
+      // Generate order number from ID
+      const orderNumber = result.orderId.slice(0, 8).toUpperCase();
+      setSavedOrder({ id: result.orderId, orderNumber, status });
+    } else {
+      alert(result.error || "فشل حفظ الطلب");
     }
   };
 
@@ -121,9 +291,12 @@ export function OrderWizard() {
             <p className="text-3xl font-bold mt-1" style={{ color: C.gold }}>
               {savedOrder.orderNumber}
             </p>
-            {cart.customer.name && (
-              <p className="text-sm text-gray-400 mt-2">الزبون: {cart.customer.name}</p>
+            {cart.customerInfo.name && (
+              <p className="text-sm text-gray-400 mt-2">الزبون: {cart.customerInfo.name}</p>
             )}
+            <p className="text-2xl font-bold mt-3" style={{ color: C.dark }}>
+              {totals.total.toFixed(2)} د.م
+            </p>
           </div>
 
           <div className="space-y-3">
@@ -137,10 +310,11 @@ export function OrderWizard() {
             </button>
 
             <button
-              onClick={() => router.push(`/seller/order-success?orderId=${savedOrder.id}&type=${savedOrder.status === "draft" ? "devis" : "bc"}`)}
+              onClick={() => router.push(`/seller/print?orderId=${savedOrder.id}&type=${savedOrder.status === "draft" ? "devis" : "bc"}&quick=true`)}
               className="w-full py-3 rounded-xl font-bold border-2 flex items-center justify-center gap-2 transition hover:bg-gray-50"
               style={{ borderColor: C.gold, color: C.dark }}
             >
+              <Printer className="w-5 h-5" style={{ color: C.gold }} />
               طباعة سريعة
             </button>
 
@@ -203,15 +377,15 @@ export function OrderWizard() {
             <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
               <div className="flex justify-between">
                 <span className="text-gray-600">الزبون</span>
-                <span className="font-bold">{cart.customer.name || "—"}</span>
+                <span className="font-bold">{cart.customerInfo.name || "—"}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-600">الهاتف</span>
-                <span className="font-bold text-left">{cart.customer.phone || "—"}</span>
+                <span className="font-bold text-left">{cart.customerInfo.phone || "—"}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-600">موعد التسليم</span>
-                <span className="font-bold">{cart.delivery.expectedDate || "—"}</span>
+                <span className="font-bold">{cart.deliveryDate || "—"}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-600">عدد المنتجات</span>
@@ -220,28 +394,28 @@ export function OrderWizard() {
               <div className="border-t pt-4 space-y-2">
                 <div className="flex justify-between">
                   <span>المجموع الفرعي</span>
-                  <span>{cartTotals.subtotal.toFixed(2)} د.م</span>
+                  <span>{totals.subtotal.toFixed(2)} د.م</span>
                 </div>
-                {cartTotals.discount > 0 && (
+                {totals.discount > 0 && (
                   <div className="flex justify-between text-red-600">
                     <span>الخصم</span>
-                    <span>-{cartTotals.discount.toFixed(2)} د.م</span>
-                  </div>
-                )}
-                {cartTotals.delivery > 0 && (
-                  <div className="flex justify-between">
-                    <span>التوصيل</span>
-                    <span>{cartTotals.delivery.toFixed(2)} د.م</span>
+                    <span>-{totals.discount.toFixed(2)} د.م</span>
                   </div>
                 )}
                 <div className="flex justify-between text-xl font-bold pt-2 border-t">
                   <span>الإجمالي</span>
-                  <span style={{ color: C.gold }}>{cartTotals.total.toFixed(2)} د.م</span>
+                  <span style={{ color: C.gold }}>{totals.total.toFixed(2)} د.م</span>
                 </div>
-                {cartTotals.deposit > 0 && (
+                {totals.deposit > 0 && (
                   <div className="flex justify-between text-sm text-gray-500">
-                    <span>التسبيق</span>
-                    <span>{cartTotals.deposit.toFixed(2)} د.م</span>
+                    <span>العربون</span>
+                    <span>{totals.deposit.toFixed(2)} د.م</span>
+                  </div>
+                )}
+                {totals.remaining > 0 && (
+                  <div className="flex justify-between text-sm text-red-500">
+                    <span>المتبقي</span>
+                    <span>{totals.remaining.toFixed(2)} د.م</span>
                   </div>
                 )}
               </div>
@@ -250,9 +424,9 @@ export function OrderWizard() {
             <div className="flex gap-3">
               <button
                 onClick={() => setStep(2)}
-                className="flex-1 py-3 rounded-xl bg-gray-100 text-gray-700 font-bold hover:bg-gray-200 transition"
+                className="flex-1 py-3 rounded-xl bg-gray-100 text-gray-700 font-bold hover:bg-gray-200 transition flex items-center justify-center gap-2"
               >
-                رجوع
+                <ArrowRight className="w-4 h-4" /> رجوع
               </button>
               <button
                 onClick={() => handleSave("draft")}
@@ -264,7 +438,7 @@ export function OrderWizard() {
               <button
                 onClick={() => handleSave("confirmed")}
                 disabled={isSubmitting}
-                className="flex-1 py-3 rounded-xl text-white font-bold transition hover:opacity-90 disabled:opacity-50"
+                className="flex-1 py-3 rounded-xl text-white font-bold transition hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2"
                 style={{ background: C.green }}
               >
                 {isSubmitting ? "..." : "✅ تأكيد الطلب"}
@@ -280,17 +454,17 @@ export function OrderWizard() {
           <button
             onClick={() => setStep(Math.max(0, step - 1))}
             disabled={step === 0}
-            className="px-6 py-2 rounded-lg bg-gray-100 text-gray-700 font-bold disabled:opacity-30"
+            className="px-6 py-2 rounded-lg bg-gray-100 text-gray-700 font-bold disabled:opacity-30 flex items-center gap-2"
           >
-            رجوع
+            <ArrowRight className="w-4 h-4" /> رجوع
           </button>
           <button
             onClick={() => canProceed() && setStep(Math.min(3, step + 1))}
             disabled={!canProceed()}
-            className="px-6 py-2 rounded-lg text-white font-bold disabled:opacity-50 transition hover:opacity-90"
+            className="px-6 py-2 rounded-lg text-white font-bold disabled:opacity-50 transition hover:opacity-90 flex items-center gap-2"
             style={{ background: C.green }}
           >
-            التالي
+            التالي <ArrowLeft className="w-4 h-4" />
           </button>
         </div>
       )}
