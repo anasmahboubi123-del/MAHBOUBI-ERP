@@ -88,7 +88,7 @@ export default function TailorChatPage() {
         recipient_id: "admin-1",
         body: newMsg.trim(),
         message_type: "text",
-      });
+      } as Parameters<typeof sendMessage>[0]);
       setNewMsg("");
     } catch (err) {
       alert("فشل إرسال الرسالة");
@@ -108,6 +108,11 @@ export default function TailorChatPage() {
         body: "صورة",
         message_type: "image",
         media_url: url,
+        order_id: null,
+        media_duration: null,
+        media_size: file.size,
+        attachment_url: null,
+        audio_url: null,
       });
     } catch (err) {
       alert("فشل رفع الصورة");
@@ -143,6 +148,10 @@ export default function TailorChatPage() {
             message_type: "voice",
             media_url: url,
             media_duration: dur,
+            order_id: null,
+            media_size: null,
+            attachment_url: null,
+            audio_url: null,
           });
         } catch (err) {
           alert("فشل إرسال الصوت");
@@ -232,7 +241,7 @@ export default function TailorChatPage() {
                         src={msg.media_url}
                         alt="صورة"
                         className="rounded-lg max-w-full mb-1 max-h-48 object-cover cursor-pointer"
-                        onClick={() => window.open(msg.media_url, "_blank")}
+                        onClick={() => window.open(msg.media_url ?? undefined, "_blank")}
                       />
                     )}
 

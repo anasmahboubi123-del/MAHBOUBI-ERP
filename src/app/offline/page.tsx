@@ -2,7 +2,7 @@
 // src/app/offline/page.tsx
 // صفحة تظهر عندما يكون المستخدم غير متصل
 // ════════════════════════════════════════════════════════════════
-
+'use client';
 export default function OfflinePage() {
   return (
     <div

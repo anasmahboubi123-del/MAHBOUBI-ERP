@@ -27,7 +27,7 @@ export default function TailorLoginPage() {
         setLoading(false);
         return;
       }
-      login(tailor.id, tailor.full_name, tailor.pin_code);
+      login(tailor.id, tailor.full_name, pin);
       router.push("/tailor/dashboard");
     } catch (err) {
       setError("حدث خطأ في الاتصال بقاعدة البيانات");

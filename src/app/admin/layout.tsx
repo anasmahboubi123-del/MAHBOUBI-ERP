@@ -8,7 +8,6 @@ const tabs = [
   { href: '/admin', label: '📊 لوحة التحكم' },
   { href: '/admin/orders', label: '📦 الطلبيات العامة' },
   { href: '/admin/orders-registry', label: '📁 سجل الطلبيات الدائم' },
-  { href: '/admin/wood-orders', label: '🪵 طلبات العود' },
   { href: '/admin/catalogue', label: '🖼️ الكتالوج' },
   { href: '/admin/wood-models', label: '📐 موديلات العود' },
   { href: '/admin/tailors', label: '🧵 الخياطين' },

@@ -41,7 +41,7 @@ interface OrderItemData {
 
 interface OrderData {
   id: string;
-  order_number: string | null;  // ← user's custom order number
+  order_number: string | null;
   customer_name: string;
   customer_phone: string;
   customer_city: string | null;
@@ -62,9 +62,6 @@ function docTitle(type: DocumentType, lang: DocumentLanguage): string {
   return titles[type]?.[lang] || titles[type]?.["ar"] || type;
 }
 
-/* ═══════════════════════════════════════════════════════════════
-   Date formatter — Arabic locale
-   ═══════════════════════════════════════════════════════════════ */
 function fmtDateAr(dateStr: string | null): string {
   if (!dateStr) return "";
   if (/^\d{4}-\d{2}-\d{2}/.test(dateStr)) {
@@ -132,9 +129,8 @@ function OrderCustomizeContent() {
       setOrder(orderData);
       setItems(itemsData || []);
 
-      // ← FIXED: Format delivery_expected_date in Arabic before setting
-      if (orderData?.delivery_expected_date) {
-        setAgreedDeliveryDate(fmtDateAr(orderData.delivery_expected_date));
+      if ((orderData as OrderData | null)?.delivery_expected_date) {
+        setAgreedDeliveryDate(fmtDateAr((orderData as OrderData).delivery_expected_date));
       }
     } catch (e) {
       console.error("fetchOrder error:", e);
@@ -153,7 +149,6 @@ function OrderCustomizeContent() {
 
   const documentTypeLabel = docTitle(printOptions.documentType, printOptions.language);
 
-  // Convert DB items to PrintModal format
   const orderItems = items.map((item) => ({
     id: item.id,
     productType: item.product_type || "salon",
@@ -166,7 +161,6 @@ function OrderCustomizeContent() {
     calculations: item.cost_breakdown || {},
   }));
 
-  // ← FIXED: Use order.order_number (user's custom number) instead of UUID
   const displayOrderNumber = order?.order_number || orderId?.slice(0, 8).toUpperCase() || "—";
 
   if (loading) {
@@ -192,6 +186,8 @@ function OrderCustomizeContent() {
       </div>
     );
   }
+
+  const o = order;
 
   return (
     <div className="min-h-screen bg-gray-50 p-4" dir="rtl">
@@ -315,8 +311,8 @@ function OrderCustomizeContent() {
                 className="w-full p-3 rounded-lg border-2 border-amber-200 text-right font-bold text-amber-900 bg-white focus:border-amber-500 focus:outline-none transition-colors text-sm"
               />
               <p className="text-xs text-amber-600 mt-1">
-                {order?.delivery_expected_date 
-                  ? `📋 موعد محفوظ: ${fmtDateAr(order.delivery_expected_date)}` 
+                {o.delivery_expected_date
+                  ? `📋 موعد محفوظ: ${fmtDateAr(o.delivery_expected_date)}`
                   : "سيظهر في بون دي كوماند ويُرسل للزبون"}
               </p>
             </div>
@@ -361,23 +357,22 @@ function OrderCustomizeContent() {
             <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
               <h3 className="font-bold mb-4">ملخص الطلب</h3>
               <div className="space-y-3">
-                {/* ← FIXED: Show order_number */}
                 <div className="flex justify-between py-2 border-b">
                   <span className="text-gray-600">رقم الطلب</span>
                   <span className="font-bold">{displayOrderNumber}</span>
                 </div>
                 <div className="flex justify-between py-2 border-b">
                   <span className="text-gray-600">الزبون</span>
-                  <span className="font-bold">{order.customer_name || "—"}</span>
+                  <span className="font-bold">{o.customer_name || "—"}</span>
                 </div>
                 <div className="flex justify-between py-2 border-b">
                   <span className="text-gray-600">الهاتف</span>
-                  <span className="font-bold text-left">{order.customer_phone || "—"}</span>
+                  <span className="font-bold text-left">{o.customer_phone || "—"}</span>
                 </div>
                 <div className="flex justify-between py-2 border-b">
                   <span className="text-gray-600">موعد التسليم المحفوظ</span>
                   <span className="font-bold" style={{ color: C.gold }}>
-                    {fmtDateAr(order.delivery_expected_date) || "—"}
+                    {fmtDateAr(o.delivery_expected_date) || "—"}
                   </span>
                 </div>
                 <div className="flex justify-between py-2 border-b">
@@ -387,13 +382,13 @@ function OrderCustomizeContent() {
                 <div className="flex justify-between py-2 border-b">
                   <span className="text-gray-600">المجموع</span>
                   <span className="font-bold" style={{ color: C.gold }}>
-                    {order.total?.toFixed(2) || "0.00"} د.م
+                    {o.total?.toFixed(2) || "0.00"} د.م
                   </span>
                 </div>
-                {order.deposit > 0 && (
+                {o.deposit > 0 && (
                   <div className="flex justify-between py-2 border-b">
                     <span className="text-gray-600">العربون</span>
-                    <span className="font-bold">{order.deposit.toFixed(2)} د.م</span>
+                    <span className="font-bold">{o.deposit.toFixed(2)} د.م</span>
                   </div>
                 )}
               </div>
@@ -431,13 +426,13 @@ function OrderCustomizeContent() {
       {showPreview && (
         <PrintModal
           orderItems={orderItems}
-          orderNumber={displayOrderNumber}  // ← FIXED: use order_number
-          customerName={order.customer_name}
-          customerPhone={order.customer_phone}
-          customerCity={order.customer_city || undefined}
-          totalAmount={order.total || 0}
-          discountAmount={order.discount || 0}
-          depositAmount={order.deposit || 0}
+          orderNumber={displayOrderNumber}
+          customerName={o.customer_name}
+          customerPhone={o.customer_phone}
+          customerCity={o.customer_city || undefined}
+          totalAmount={o.total || 0}
+          discountAmount={o.discount || 0}
+          depositAmount={o.deposit || 0}
           deliveryCost={0}
           documentType={printOptions.documentType}
           printOptions={printOptions}

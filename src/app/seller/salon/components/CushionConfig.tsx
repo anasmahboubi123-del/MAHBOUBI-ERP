@@ -1,8 +1,16 @@
 'use client';
 import { useEffect } from 'react';
-import { CushionPlan, Seddari } from '@/lib/types';
+import { Seddari } from '@/lib/types';
 import { DEFAULTS, suggestedCushionCount } from '@/lib/calculations';
 import Card from '@/components/ui/Card';
+
+type CushionPlan = {
+  seddariId: string;
+  size: number;
+  count: number;
+  stitchPrice: number;
+  stuffing: boolean;
+};
 
 /** المرحلة 3: المخاد مع الحساب التلقائي الذكي */
 export default function CushionConfig({

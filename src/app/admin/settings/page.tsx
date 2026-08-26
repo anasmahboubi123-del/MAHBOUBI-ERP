@@ -66,6 +66,12 @@ interface FoamType {
   image_url?: string;
 }
 
+interface DocumentConditions {
+  devis_conditions?: string | null;
+  bc_conditions?: string | null;
+  facture_conditions?: string | null;
+}
+
 // ─── Tabs ───
 const TABS: { key: TabKey; label: string; icon: React.ElementType }[] = [
   { key: 'general', label: 'أساسيات المحل', icon: Store },
@@ -108,12 +114,13 @@ function useSettings() {
   const getSetting = useCallback(async (key: string, fallback: any) => {
     const { data, error } = await supabase.from('settings').select('value').eq('key', key).single();
     if (error || !data) return fallback;
-    try { return JSON.parse(data.value); } catch { return data.value; }
+    const value = (data as { value: string }).value;
+    try { return JSON.parse(value); } catch { return value; }
   }, []);
 
   const setSetting = useCallback(async (key: string, value: any) => {
     const json = typeof value === 'string' ? value : JSON.stringify(value);
-    await supabase.from('settings').upsert({ key, value: json }, { onConflict: 'key' });
+    await supabase.from('settings').upsert({ key, value: json } as never, { onConflict: 'key' });
   }, []);
 
   return { loading, setLoading, error, setError, getSetting, setSetting };
@@ -269,12 +276,12 @@ function FlowTab() {
   useEffect(() => {
     (async () => {
       const { data } = await supabase.from('settings').select('value').eq('key', 'salon_flow_stages').single();
-      if (data) { try { setStages(JSON.parse(data.value)); } catch {} }
+      if (data) { try { setStages(JSON.parse((data as { value: string }).value)); } catch {} }
     })();
   }, []);
 
   const save = async () => {
-    await supabase.from('settings').upsert({ key: 'salon_flow_stages', value: JSON.stringify(stages) }, { onConflict: 'key' });
+    await supabase.from('settings').upsert({ key: 'salon_flow_stages', value: JSON.stringify(stages) } as never, { onConflict: 'key' });
     setSaved(true); setTimeout(() => setSaved(false), 2000);
   };
 
@@ -369,7 +376,7 @@ function ConstantsTab() {
 
   const save = async () => {
     for (const c of constants) {
-      await supabase.from('settings').upsert({ key: `salon_const_${c.key}`, value: JSON.stringify(c.value) }, { onConflict: 'key' });
+      await supabase.from('settings').upsert({ key: `salon_const_${c.key}`, value: JSON.stringify(c.value) } as any, { onConflict: 'key' });
     }
     setSaved(true); setTimeout(() => setSaved(false), 2000);
   };
@@ -528,10 +535,11 @@ function PrintSettingsTab() {
         .maybeSingle();
 
       if (data && !error) {
+        const documentConditions = data as unknown as DocumentConditions;
         setConditions({
-          devis_conditions: data.devis_conditions || '',
-          bc_conditions: data.bc_conditions || '',
-          facture_conditions: data.facture_conditions || '',
+          devis_conditions: documentConditions.devis_conditions || '',
+          bc_conditions: documentConditions.bc_conditions || '',
+          facture_conditions: documentConditions.facture_conditions || '',
         });
       }
     } catch (e) {
@@ -551,7 +559,7 @@ function PrintSettingsTab() {
             bc_conditions: conditions.bc_conditions,
             facture_conditions: conditions.facture_conditions,
             updated_at: new Date().toISOString(),
-          },
+          } as never,
           { onConflict: 'id' }
         );
 

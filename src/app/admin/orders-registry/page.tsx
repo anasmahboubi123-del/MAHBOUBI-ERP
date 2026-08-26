@@ -201,10 +201,10 @@ export default function OrdersRegistryPage() {
         supabase.from("order_parts").select("part_type"),
       ]);
       const tMap: Record<string, DbTailor> = {};
-      (tailors || []).forEach((t) => { tMap[t.id] = t; });
+      ((tailors || []) as DbTailor[]).forEach((t) => { tMap[t.id] = t; });
       setTailorsMap(tMap);
       const uMap: Record<string, DbUser> = {};
-      (users || []).forEach((u) => { uMap[u.id] = u; });
+      ((users || []) as DbUser[]).forEach((u) => { uMap[u.id] = u; });
       setUsersMap(uMap);
       const types = Array.from(new Set((parts || []).map((p: any) => p.part_type).filter(Boolean)));
       setProductTypes(types);
@@ -389,8 +389,8 @@ export default function OrdersRegistryPage() {
   // ─── Archive / Restore / Cancel ───
   const handleArchive = async (orderId: string, archive: boolean) => {
     setSavingAction(true);
-    await supabase.from("orders").update({ archived_at: archive ? new Date().toISOString() : null }).eq("id", orderId);
-    await supabase.from("order_timeline").insert({ order_id: orderId, event_type: archive ? "archived" : "restored", actor: "المدير", note: archive ? "أُرشفت الطلبية" : "استُعيدت الطلبية من الأرشيف" });
+    await supabase.from("orders").update({ archived_at: archive ? new Date().toISOString() : null } as never).eq("id", orderId);
+    await supabase.from("order_timeline").insert({ order_id: orderId, event_type: archive ? "archived" : "restored", actor: "المدير", note: archive ? "أُرشفت الطلبية" : "استُعيدت الطلبية من الأرشيف" } as never);
     setSavingAction(false);
     loadOrders();
     if (selectedOrder?.id === orderId) {
@@ -400,8 +400,8 @@ export default function OrdersRegistryPage() {
 
   const handleCancel = async (orderId: string, reason: string) => {
     setSavingAction(true);
-    await supabase.from("orders").update({ status: "cancelled", cancelled_at: new Date().toISOString(), cancelled_reason: reason }).eq("id", orderId);
-    await supabase.from("order_timeline").insert({ order_id: orderId, event_type: "cancelled", actor: "المدير", note: reason });
+    await supabase.from("orders").update({ status: "cancelled", cancelled_at: new Date().toISOString(), cancelled_reason: reason } as never).eq("id", orderId);
+    await supabase.from("order_timeline").insert({ order_id: orderId, event_type: "cancelled", actor: "المدير", note: reason } as never);
     setSavingAction(false);
     loadOrders();
     if (selectedOrder?.id === orderId) {
@@ -413,8 +413,8 @@ export default function OrdersRegistryPage() {
   const handleAddNote = async () => {
     if (!newNote.trim() || !selectedOrder) return;
     const updated = selectedOrder.notes ? selectedOrder.notes + "\n" + newNote : newNote;
-    await supabase.from("orders").update({ notes: updated }).eq("id", selectedOrder.id);
-    await supabase.from("order_timeline").insert({ order_id: selectedOrder.id, event_type: "note_added", actor: "المدير", note: newNote });
+    await supabase.from("orders").update({ notes: updated } as never).eq("id", selectedOrder.id);
+    await supabase.from("order_timeline").insert({ order_id: selectedOrder.id, event_type: "note_added", actor: "المدير", note: newNote } as never);
     setSelectedOrder((prev) => prev ? { ...prev, notes: updated } : null);
     setNewNote("");
   };

@@ -49,7 +49,7 @@ export default function AppBar({ logoUrl, storeName, onNavigate, onLogout }: App
                 <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#1B5E3B] to-[#145030] flex items-center justify-center shadow-sm overflow-hidden">
                   {logoUrl ? (
                     <Image
-                      src={getPublicImageUrl('site-assets', logoUrl)}
+                      src={getPublicImageUrl('site-assets', logoUrl)!}
                       alt={storeName}
                       width={40}
                       height={40}
@@ -113,7 +113,7 @@ export default function AppBar({ logoUrl, storeName, onNavigate, onLogout }: App
                     <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#1B5E3B] to-[#145030] flex items-center justify-center overflow-hidden">
                       {logoUrl ? (
                         <Image
-                          src={getPublicImageUrl('site-assets', logoUrl)}
+                          src={getPublicImageUrl('site-assets', logoUrl)!}
                           alt={storeName}
                           width={40}
                           height={40}

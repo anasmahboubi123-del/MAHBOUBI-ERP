@@ -66,7 +66,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const updateSetting = useCallback(async (key: string, value: any) => {
     const { error } = await supabase
       .from('settings')
-      .upsert({ key, value, updated_by: 'admin' }, { onConflict: 'key' });
+      .upsert([{ key, value, updated_by: 'admin' }] as any, { onConflict: 'key' });
 
     if (error) {
       console.error('❌ Error updating setting:', error);

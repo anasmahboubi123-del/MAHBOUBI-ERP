@@ -45,8 +45,9 @@ export default function InvoicePreview({
     setSaving(true);
     try {
       let drawing_url: string | null = null;
-      if (draft.drawingPng) {
-        const blob = await (await fetch(draft.drawingPng)).blob();
+      const drawingPng = (draft as OrderDraft & { drawingPng?: string }).drawingPng;
+      if (drawingPng) {
+        const blob = await (await fetch(drawingPng)).blob();
         drawing_url = await uploadToBucket(
           'orders',
           `drawings/${Date.now()}.png`,
@@ -174,7 +175,10 @@ export default function InvoicePreview({
               <tr className="border-b">
                 <td className="py-2">
                   خياطة المخاد (
-                  {draft.cushions.reduce((s, c) => s + c.count, 0)} وسادة)
+                  {(
+                    (draft as OrderDraft & { cushions?: { count: number }[] })
+                      .cushions ?? []
+                  ).reduce((s, c) => s + c.count, 0)} وسادة)
                 </td>
                 <td className="text-left">{fmtDh(t.cushionsCost)}</td>
               </tr>

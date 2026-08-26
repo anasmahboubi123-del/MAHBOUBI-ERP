@@ -29,37 +29,35 @@ interface CatalogueTab {
   isFoam?: boolean; // ← خاص بالبونج
 }
 
-/* ─── Fetchers ─── */
 async function fetchFabrics() {
   const { data, error } = await supabase.from("fabrics").select("*").order("name");
   if (error) throw error;
-  return (data || []).map((row) => ({ ...row, image_url: row.image_url || null }));
+  return (data || []).map((row: any) => ({ ...row, image_url: row.image_url || null }));
 }
 
 async function fetchTapis() {
   const { data, error } = await supabase.from("tapis").select("*").order("name");
   if (error) throw error;
-  return (data || []).map((row) => ({ ...row, image_url: row.image_url || null }));
+  return (data || []).map((row: any) => ({ ...row, image_url: row.image_url || null }));
 }
 
 async function fetchBois() {
   const { data, error } = await supabase.from("bois").select("*").order("name");
   if (error) throw error;
-  return (data || []).map((row) => ({ ...row, image_url: row.image_url || null }));
+  return (data || []).map((row: any) => ({ ...row, image_url: row.image_url || null }));
 }
 
 async function fetchAccessories() {
   const { data, error } = await supabase.from("accessories").select("*").order("name");
   if (error) throw error;
-  return (data || []).map((row) => ({ ...row, image_url: row.image_url || null }));
+  return (data || []).map((row: any) => ({ ...row, image_url: row.image_url || null }));
 }
 
 async function fetchAqiqShapes() {
   const { data, error } = await supabase.from("aqiq_shapes").select("*").order("name");
   if (error) throw error;
-  return (data || []).map((row) => ({ ...row, image_url: row.image_url || null }));
+  return (data || []).map((row: any) => ({ ...row, image_url: row.image_url || null }));
 }
-
 async function fetchRembourrage() {
   const { data, error } = await supabase.from("rembourrage").select("*").order("name");
   if (error) throw error;
@@ -76,7 +74,7 @@ async function fetchFoamProducts() {
   if (error) throw error;
 
   const result = [];
-  for (const product of products || []) {
+  for (const product of (products || []) as any[]) {
     const { data: heights } = await supabase
       .from("foam_product_heights")
       .select("*")
@@ -95,7 +93,7 @@ async function fetchSeddariStitches() {
     .eq("target", "seddari")
     .order("name");
   if (error) throw error;
-  return (data || []).map((row) => ({ ...row, image_url: row.image_url || null }));
+  return (data || []).map((row: any) => ({ ...row, image_url: row.image_url || null }));
 }
 
 async function fetchCushionStitches() {
@@ -105,7 +103,7 @@ async function fetchCushionStitches() {
     .eq("target", "cushion")
     .order("name");
   if (error) throw error;
-  return (data || []).map((row) => ({ ...row, image_url: row.image_url || null }));
+  return (data || []).map((row: any) => ({ ...row, image_url: row.image_url || null }));
 }
 
 async function fetchDecorStitches() {
@@ -115,7 +113,7 @@ async function fetchDecorStitches() {
     .eq("target", "decor")
     .order("name");
   if (error) throw error;
-  return (data || []).map((row) => ({ ...row, image_url: row.image_url || null }));
+  return (data || []).map((row: any) => ({ ...row, image_url: row.image_url || null }));
 }
 
 async function fetchDecorShapes() {
@@ -124,25 +122,25 @@ async function fetchDecorShapes() {
     .select("*")
     .order("name");
   if (error) throw error;
-  return (data || []).map((row) => ({ ...row, image_url: row.image_url || null }));
+  return (data || []).map((row: any) => ({ ...row, image_url: row.image_url || null }));
 }
 
 async function fetchRomaniModels() {
   const { data, error } = await supabase.from("romani_models").select("*").order("name");
   if (error) throw error;
-  return (data || []).map((row) => ({ ...row, image_url: row.image_url || null }));
+  return (data || []).map((row: any) => ({ ...row, image_url: row.image_url || null }));
 }
 
 async function fetchRomaniColors() {
   const { data, error } = await supabase.from("romani_colors").select("*").order("name");
   if (error) throw error;
-  return (data || []).map((row) => ({ ...row, image_url: row.image_url || null }));
+  return (data || []).map((row: any) => ({ ...row, image_url: row.image_url || null }));
 }
 
 async function fetchKhamiya() {
   const { data, error } = await supabase.from("khamiya").select("*").order("name");
   if (error) throw error;
-  return (data || []).map((row) => ({ ...row, image_url: row.image_url || null }));
+  return (data || []).map((row: any) => ({ ...row, image_url: row.image_url || null }));
 }
 
 const HEIGHTS = [30, 50, 70];
@@ -531,14 +529,14 @@ export default function CataloguePage() {
 
       console.log("Payload:", payload);
 
+      const table = supabase.from(currentTab.table as any) as any;
       if (editingId) {
-        const { error } = await supabase
-          .from(currentTab.table)
+        const { error } = await table
           .update(payload)
           .eq("id", editingId);
         if (error) throw error;
       } else {
-        const { error } = await supabase.from(currentTab.table).insert(payload);
+        const { error } = await table.insert(payload);
         if (error) throw error;
       }
 
@@ -570,18 +568,20 @@ export default function CataloguePage() {
       if (editingId) {
         const { error } = await supabase
           .from("foam_products")
-          .update(productPayload)
+          .update(productPayload as never)
           .eq("id", editingId);
         if (error) throw error;
       } else {
         const { data, error } = await supabase
           .from("foam_products")
-          .insert(productPayload)
+          .insert([productPayload] as never)
           .select()
           .single();
         if (error) throw error;
-        productId = data.id;
+        productId = (data as unknown as { id: string }).id;
       }
+
+      if (!productId) throw new Error("تعذر تحديد المنتج المحفوظ");
 
       // حفظ الارتفاعات
       for (const h of HEIGHTS) {
@@ -606,10 +606,10 @@ export default function CataloguePage() {
         if (existing) {
           await supabase
             .from("foam_product_heights")
-            .update(heightPayload)
-            .eq("id", existing.id);
+            .update(heightPayload as never)
+            .eq("id", (existing as { id: string }).id);
         } else {
-          await supabase.from("foam_product_heights").insert(heightPayload);
+          await supabase.from("foam_product_heights").insert(heightPayload as never);
         }
       }
 

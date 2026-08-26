@@ -7,6 +7,7 @@ import type { FoamOrder } from "@/types/foam-types";
 
 interface FoamOrderWithProduct extends FoamOrder {
   foam_products?: { name: string } | null;
+  final_price?: number | null;
 }
 
 function getDaysLeft(deliveryDate: string | null | undefined): number {

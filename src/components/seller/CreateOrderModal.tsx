@@ -144,7 +144,7 @@ export default function CreateOrderModal({ isOpen, onClose, onSubmit, initialPro
                           <div className="w-14 h-14 rounded-xl bg-gray-200 overflow-hidden flex-shrink-0">
                             {line.image_url ? (
                               <Image
-                                src={getPublicImageUrl('catalogue', line.image_url)}
+                                src={getPublicImageUrl('catalogue', line.image_url) ?? ''}
                                 alt={line.product_name}
                                 width={56}
                                 height={56}

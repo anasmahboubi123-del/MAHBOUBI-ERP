@@ -155,6 +155,11 @@ export default function TailorOrderDetailPage() {
         order_id: orderId,
         body: bodyText,
         message_type: "text",
+        media_url: null,
+        media_duration: null,
+        media_size: null,
+        attachment_url: null,
+        audio_url: null,
       });
     } catch (err) {
       alert("فشل إرسال الرسالة");
@@ -176,6 +181,10 @@ export default function TailorOrderDetailPage() {
         body: "صورة",
         message_type: "image",
         media_url: url,
+        media_duration: null,
+        media_size: null,
+        attachment_url: null,
+        audio_url: null,
       });
     } catch (err) {
       alert("فشل رفع الصورة");
@@ -218,6 +227,9 @@ export default function TailorOrderDetailPage() {
             message_type: "voice",
             media_url: url,
             media_duration: calculatedDuration,
+            media_size: null,
+            attachment_url: null,
+            audio_url: null,
           });
         } catch (err) {
           alert("فشل إرسال الصوت");
@@ -263,6 +275,11 @@ export default function TailorOrderDetailPage() {
         order_id: orderId,
         body: "✅ تم إنهاء العمل على هذه الطلبية",
         message_type: "text",
+        media_url: null,
+        media_duration: null,
+        media_size: null,
+        attachment_url: null,
+        audio_url: null,
       });
       fetchOrder();
     } catch (err) {
@@ -426,14 +443,14 @@ export default function TailorOrderDetailPage() {
                         src={msg.media_url}
                         alt="صورة"
                         className="rounded-lg max-w-full mb-2 max-h-48 object-cover cursor-pointer"
-                        onClick={() => window.open(msg.media_url, "_blank")}
+                        onClick={() => window.open(msg.media_url!, "_blank")}
                       />
                     )}
                     {msg.message_type === "voice" && msg.media_url && (
                       <div className="flex items-center gap-2">
                         <Volume2 size={16} className="text-[#1B5E38]" />
                         <audio controls src={msg.media_url} className="w-40 h-8" />
-                        {msg.media_duration !== undefined && (
+                        {msg.media_duration != null && (
                           <span className="text-xs text-[#6B7280]">{formatDur(msg.media_duration)}</span>
                         )}
                       </div>

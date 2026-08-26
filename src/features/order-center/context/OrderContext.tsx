@@ -221,7 +221,7 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
       try {
         const orderNumber = await getNextOrderNumber();
 
-        const { data: order, error: orderError } = await supabase
+        const { data: orderData, error: orderError } = await supabase
           .from("orders")
           .insert({
             order_number: orderNumber,
@@ -244,10 +244,11 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
             customer_notes: cart.notes.customer || null,
             internal_notes: cart.notes.internal || null,
             production_notes: cart.notes.production || null,
-          })
+          } as any)
           .select()
           .single();
 
+        const order = orderData as { id: string } | null;
         if (orderError || !order) throw orderError;
 
         const itemsPayload = cart.items.map((item: OrderItem) => ({
@@ -269,7 +270,7 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
 
         const { error: itemsError } = await supabase
           .from("order_items")
-          .insert(itemsPayload);
+          .insert(itemsPayload as never[]);
 
         if (itemsError) throw itemsError;
 

@@ -39,19 +39,27 @@ export function computeTotals(draft: OrderDraft): Totals {
   const pricePerCm = (draft.fabric?.price_per_meter ?? 0) / 100;
 
   const seddarsFabric = draft.seddars.reduce((s, x) => s + seddariFabricCm(x), 0);
-  const formajaCount = draft.seddars.filter((s) => s.junction === 'formaja').length;
+  const formajaCount = draft.seddars.filter(
+    (s) => (s as Seddari & { junction?: string }).junction === 'formaja'
+  ).length;
   const fabricCm = seddarsFabric + formajaCount * DEFAULTS.formajaFabricCm;
   const fabricCost = fabricCm * pricePerCm;
 
   const seddariSewing = draft.seddars.length * DEFAULTS.seddariSewingPrice;
   const formajaCost = formajaCount * DEFAULTS.formajaSewingPrice;
 
-  const cushionsCost = draft.cushions.reduce((s, c) => s + c.count * c.stitchPrice, 0);
-  const stuffingCost = draft.cushions.reduce(
+  const cushions = (draft as OrderDraft & {
+    cushions?: Array<{ count: number; stitchPrice: number; stuffing?: boolean }>;
+  }).cushions ?? [];
+  const cushionsCost = cushions.reduce((s, c) => s + c.count * c.stitchPrice, 0);
+  const stuffingCost = cushions.reduce(
     (s, c) => s + (c.stuffing ? c.count * DEFAULTS.stuffingPrice : 0),
     0
   );
-  const decorCost = draft.decorCushions.reduce((s, d) => s + d.count * d.stitchPrice, 0);
+  const decorCushions = (draft as OrderDraft & {
+    decorCushions?: Array<{ count: number; stitchPrice: number }>;
+  }).decorCushions ?? [];
+  const decorCost = decorCushions.reduce((s, d) => s + d.count * d.stitchPrice, 0);
   const extrasCost = draft.extras.reduce((s, e) => s + e.qty * e.price, 0);
 
   const computed =

@@ -201,7 +201,7 @@ export async function fetchNotifications(): Promise<Notification[]> {
 }
 
 export async function markNotificationRead(id: string): Promise<void> {
-  await supabase.from('notifications').update({ is_read: true }).eq('id', id);
+  await supabase.from('notifications').update({ is_read: true } as never).eq('id', id);
 }
 
 // ─── Realtime ───
@@ -243,7 +243,7 @@ export async function createOrder(orderData: {
 }) {
   const { data, error } = await supabase
     .from('orders')
-    .insert([{ ...orderData, status: orderData.status || 'جديد' }])
+    .insert([{ ...orderData, status: orderData.status || 'جديد' }] as never[])
     .select()
     .single();
 
@@ -257,7 +257,7 @@ export async function createOrder(orderData: {
 export async function createOrderItems(orderId: string, items: any[]) {
   const { error } = await supabase
     .from('order_items')
-    .insert(items.map((item) => ({ ...item, order_id: orderId })));
+    .insert(items.map((item) => ({ ...item, order_id: orderId })) as never[]);
 
   if (error) {
     console.error('Error creating order items:', error);
@@ -332,7 +332,7 @@ export async function addAlbumItem(item: Omit<AlbumItem, 'id' | 'created_at'>): 
   try {
     const { data, error } = await supabase
       .from('seller_album')
-      .insert([{ ...item, created_at: new Date().toISOString() }])
+      .insert([{ ...item, created_at: new Date().toISOString() }] as never)
       .select()
       .single();
 

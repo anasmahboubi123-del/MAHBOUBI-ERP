@@ -1,19 +1,21 @@
 'use client';
 
 import { X, Triangle, ArrowLeftRight, Box } from 'lucide-react';
-import { JunctionType } from '@/lib/types';
+
+type JunctionType = 'formaja' | 'insert' | 'wooden_box' | 'none';
+type JunctionDirection = 'into_next' | 'from_next';
 
 interface CornerMenuProps {
   open: boolean;
   onClose: () => void;
-  onSelect: (type: JunctionType, direction?: 'into_next' | 'from_next') => void;
+  onSelect: (type: JunctionType, direction?: JunctionDirection) => void;
   current?: JunctionType;
-  currentDirection?: 'into_next' | 'from_next';
+  currentDirection?: JunctionDirection;
 }
 
 const options: {
   type: JunctionType;
-  direction?: 'into_next' | 'from_next';
+  direction?: JunctionDirection;
   label: string;
   icon: React.ReactNode;
   desc: string;

@@ -210,7 +210,10 @@ export default function TailorOrderPage() {
                 </span>
               </div>
               <div className="mt-1 text-sm">
-                الربط: {junctionLabels[s.junction] ?? s.junction ?? '—'}
+                الربط: {(() => {
+                  const junction = (s as Seddari & { junction?: string }).junction;
+                  return junctionLabels[junction ?? ''] ?? junction ?? '—';
+                })()}
               </div>
             </div>
           ))}

@@ -123,9 +123,11 @@ export default function AdminDashboardPage() {
         supabase.from("wood_orders").select("*").gte("created_at", since).order("created_at", { ascending: false }).limit(100),
       ]);
 
-      const ordersWithParts: OrderWithParts[] = (ordersData || []).map((o) => ({
+      const orderRows = (ordersData || []) as DbOrder[];
+      const partRows = (partsData || []) as DbOrderPart[];
+      const ordersWithParts: OrderWithParts[] = orderRows.map((o) => ({
         ...o,
-        parts: (partsData || []).filter((p) => p.order_id === o.id),
+        parts: partRows.filter((p) => p.order_id === o.id),
       }));
 
       setOrders(ordersWithParts);
@@ -133,7 +135,8 @@ export default function AdminDashboardPage() {
       setTimeline(timelineData || []);
       setFoamOrders(foamData || []);
       setWoodOrders(woodData || []);
-      if (targetData?.value) setTarget(Number(targetData.value) || 15000);
+      const monthlyTarget = (targetData as { value?: string | number } | null)?.value;
+      if (monthlyTarget) setTarget(Number(monthlyTarget) || 15000);
     } catch (err) {
       console.error("فشل تحميل لوحة التحكم:", err);
     } finally {

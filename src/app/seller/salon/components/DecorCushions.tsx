@@ -1,8 +1,13 @@
 'use client';
-import { DecorCushionPlan } from '@/lib/types';
 import { DEFAULTS } from '@/lib/calculations';
 import Button from '@/components/ui/Button';
 import Card from '@/components/ui/Card';
+
+type DecorCushionPlan = {
+  shape: string;
+  count: number;
+  stitchPrice: number;
+};
 
 /** المرحلة 4: مخاد الديكور */
 export default function DecorCushions({

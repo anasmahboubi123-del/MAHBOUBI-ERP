@@ -21,39 +21,41 @@ export class DocumentService {
   static async getBusinessProfile(): Promise<BusinessProfile | null> {
     const { data } = await supabase.from('business_profile').select('*').single();
     if (!data) return null;
+    const profile = data as Record<string, string | null>;
     return {
-      companyName: data.company_name,
-      commercialName: data.commercial_name,
-      address: data.address,
-      city: data.city,
-      phone: data.phone,
-      mobile: data.mobile,
-      email: data.email,
-      website: data.website,
-      facebook: data.facebook,
-      instagram: data.instagram,
-      whatsapp: data.whatsapp,
-      ice: data.ice,
-      if_: data.if_,
-      rc: data.rc,
-      patente: data.patente,
-      logoUrl: data.logo_url,
-      stampUrl: data.stamp_url,
-      signatureUrl: data.signature_url,
-      bankName: data.bank_name,
-      rib: data.rib,
-      iban: data.iban,
-      swift: data.swift,
+      companyName: profile.company_name ?? '',
+      commercialName: profile.commercial_name ?? undefined,
+      address: profile.address ?? '',
+      city: profile.city ?? '',
+      phone: profile.phone ?? '',
+      mobile: profile.mobile ?? undefined,
+      email: profile.email ?? '',
+      website: profile.website ?? undefined,
+      facebook: profile.facebook ?? undefined,
+      instagram: profile.instagram ?? undefined,
+      whatsapp: profile.whatsapp ?? undefined,
+      ice: profile.ice ?? '',
+      if_: profile.if_ ?? '',
+      rc: profile.rc ?? '',
+      patente: profile.patente ?? '',
+      logoUrl: profile.logo_url ?? undefined,
+      stampUrl: profile.stamp_url ?? undefined,
+      signatureUrl: profile.signature_url ?? undefined,
+      bankName: profile.bank_name ?? undefined,
+      rib: profile.rib ?? undefined,
+      iban: profile.iban ?? undefined,
+      swift: profile.swift ?? undefined,
     };
   }
 
   /* ── Fetch Conditions ── */
   static async getConditions(): Promise<DocumentConditions> {
     const { data } = await supabase.from('document_conditions').select('*').single();
+    const row = data as any;
     return {
-      devis: data?.devis_conditions || 'صلاحية هذا العرض 15 يوماً.',
-      bonDeCommande: data?.bc_conditions || 'العربون غير قابل للاسترجاع بعد بدء التصنيع.',
-      facture: data?.facture_conditions || 'الفاتورة تثبت البيع.',
+      devis: row?.devis_conditions || 'صلاحية هذا العرض 15 يوماً.',
+      bonDeCommande: row?.bc_conditions || 'العربون غير قابل للاسترجاع بعد بدء التصنيع.',
+      facture: row?.facture_conditions || 'الفاتورة تثبت البيع.',
     };
   }
 
@@ -69,7 +71,8 @@ export class DocumentService {
     userId: string
   ): Promise<GeneratedDocument> {
     const { data: order } = await supabase.from('orders').select('order_number').eq('id', orderId).single();
-    const number = this.generateNumber(job.documentType, order?.order_number || 'UNKNOWN');
+    const orderRow = order as any;
+    const number = this.generateNumber(job.documentType, orderRow?.order_number || 'UNKNOWN');
 
     const { data, error } = await supabase
       .from('generated_documents')
@@ -82,21 +85,22 @@ export class DocumentService {
         generated_by: userId,
         generated_at: new Date().toISOString(),
         version: 1,
-      })
+      } as any)
       .select()
       .single();
 
     if (error) throw error;
+    const doc = data as any;
 
     return {
-      id: data.id,
+      id: doc.id,
       orderId,
       type: job.documentType,
       printVariant: job.printVariant,
       number,
       language: job.language,
       generatedBy: userId,
-      generatedAt: data.generated_at,
+      generatedAt: doc.generated_at,
       version: 1,
     };
   }
@@ -250,7 +254,6 @@ export class DocumentService {
     ` : '';
 
     // ── Logo handling ──
-    // Use real logo from Supabase if available, otherwise placeholder
     const logoHtml = business.logoUrl
       ? `<img src="${business.logoUrl}" style="max-width:100px;max-height:100px;object-fit:contain;" alt="Logo" />`
       : `<div style="width:80px;height:80px;border:2px solid #1B5E38;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;color:#1B5E38;text-align:center;">LOGO</div>`;
@@ -289,7 +292,6 @@ export class DocumentService {
         <div class="page">
           ${stampHtml}
 
-          <!-- HEADER -->
           <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">
             <div style="flex:1;">
               <h1 style="font-size:52px;font-weight:700;color:#1B5E38;letter-spacing:2px;line-height:1;margin:0;text-transform:uppercase;">
@@ -305,7 +307,6 @@ export class DocumentService {
             </div>
           </div>
 
-          <!-- INFO LINE -->
           <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-top:20px;margin-bottom:8px;">
             <div style="font-size:12px;color:#1a1a1a;line-height:1.8;">
               <div>Fait le ${orderDate}</div>
@@ -317,10 +318,8 @@ export class DocumentService {
             </div>
           </div>
 
-          <!-- SEPARATOR LINE -->
           <div style="height:2px;background:#1B5E38;margin:15px 0 25px 0;"></div>
 
-          <!-- CUSTOMER INFO (for client/manager/accounting) -->
           ${job.printVariant !== 'production' ? `
           <div style="margin-bottom:25px;padding:12px 0;">
             <div style="font-size:11px;color:#666;margin-bottom:4px;text-transform:uppercase;letter-spacing:1px;">Client · الزبون</div>
@@ -329,7 +328,6 @@ export class DocumentService {
           </div>
           ` : ''}
 
-          <!-- PRODUCTS TABLE -->
           <table style="width:100%;border-collapse:collapse;">
             <thead>
               <tr>
@@ -354,22 +352,12 @@ export class DocumentService {
             </tbody>
           </table>
 
-          <!-- FINANCIAL -->
           ${financialHtml}
-
-          <!-- SOCIAL / CONTACT -->
           ${socialBlock}
-
-          <!-- CONDITIONS -->
           ${conditionsHtml}
-
-          <!-- SIGNATURES -->
           ${signaturesHtml}
-
-          <!-- QR -->
           ${qrHtml}
 
-          <!-- FOOTER -->
           <div style="position:absolute;bottom:30px;left:50px;right:50px;text-align:center;font-size:9px;color:#999;letter-spacing:0.5px;">
             ${business.companyName || 'El Mahboubi'} · ${business.phone || ''} · Document généré le ${new Date().toLocaleDateString('fr-FR')}
           </div>
@@ -390,16 +378,13 @@ export class DocumentService {
     printWindow.document.write(html);
     printWindow.document.close();
     printWindow.focus();
-    // Wait for images to load then print
     setTimeout(() => {
       printWindow.print();
     }, 800);
   }
 
-  /* ── Generate & Upload PDF (future: use html2canvas + jsPDF) ── */
+  /* ── Generate & Upload PDF ── */
   static async generatePdf(job: PrintJob, orderData: any, business: BusinessProfile, conditions: DocumentConditions): Promise<Blob | null> {
-    // For now, returns null. In production, use html2canvas + jsPDF
-    // to generate a real PDF blob and upload to Supabase Storage
     console.log('PDF generation requires html2canvas + jsPDF libraries');
     return null;
   }

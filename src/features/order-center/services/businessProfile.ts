@@ -51,12 +51,13 @@ export async function loadBusinessProfile(): Promise<BusinessProfile> {
       .select('*')
       .maybeSingle();
     if (error || !data) return FALLBACK;
+    const profile = data as Partial<BusinessProfile>;
     return {
       ...FALLBACK,
-      ...data,
+      ...profile,
       // Ensure colors always have a value
-      primary_color: data.primary_color || FALLBACK.primary_color,
-      secondary_color: data.secondary_color || FALLBACK.secondary_color,
+      primary_color: profile.primary_color || FALLBACK.primary_color,
+      secondary_color: profile.secondary_color || FALLBACK.secondary_color,
     };
   } catch {
     return FALLBACK;

@@ -97,10 +97,16 @@ export async function getAllDocumentConditions(): Promise<Record<string, string>
       };
     }
 
+    const row = data as {
+      devis_conditions?: string;
+      bc_conditions?: string;
+      facture_conditions?: string;
+    };
+
     return {
-      devis_conditions: data.devis_conditions || FALLBACK_CONDITIONS.devis.join("\n"),
-      bc_conditions: data.bc_conditions || FALLBACK_CONDITIONS.bon_de_commande.join("\n"),
-      facture_conditions: data.facture_conditions || FALLBACK_CONDITIONS.facture.join("\n"),
+      devis_conditions: row.devis_conditions || FALLBACK_CONDITIONS.devis.join("\n"),
+      bc_conditions: row.bc_conditions || FALLBACK_CONDITIONS.bon_de_commande.join("\n"),
+      facture_conditions: row.facture_conditions || FALLBACK_CONDITIONS.facture.join("\n"),
     };
   } catch {
     return {
@@ -117,13 +123,15 @@ export async function saveDocumentConditions(conditions: {
   bc_conditions?: string;
   facture_conditions?: string;
 }): Promise<void> {
+  const payload = {
+    ...conditions,
+    updated_at: new Date().toISOString(),
+  } as any;
+
   const { error } = await supabase
     .from("document_conditions")
     .upsert(
-      {
-        ...conditions,
-        updated_at: new Date().toISOString(),
-      },
+      payload,
       { onConflict: "id" }
     );
 

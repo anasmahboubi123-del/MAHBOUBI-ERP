@@ -100,16 +100,16 @@ export default function InvoiceContent() {
       setLoading(false);
       return;
     }
-    fetchOrder();
+    fetchOrder(orderId);
   }, [orderId]);
 
-  const fetchOrder = async () => {
+  const fetchOrder = async (id: string) => {
     try {
       setLoading(true);
       const { data, error } = await supabase
         .from("orders")
         .select(`*, order_items(*)`)
-        .eq("id", orderId)
+        .eq("id", id)
         .single();
 
       if (error) throw error;

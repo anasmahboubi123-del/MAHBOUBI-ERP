@@ -15,12 +15,13 @@ export async function getNextOrderNumber(): Promise<string> {
     .eq('year', year)
     .maybeSingle();
 
-  const nextNum = (existing?.last_number || 0) + 1;
+  const lastNumber = (existing as { last_number?: number } | null)?.last_number ?? 0;
+  const nextNum = lastNumber + 1;
 
   // تحديث العداد
   const { error } = await supabase
     .from('order_counters')
-    .upsert({ year, last_number: nextNum }, { onConflict: 'year' });
+    .upsert({ year, last_number: nextNum } as never, { onConflict: 'year' });
 
   if (error) {
     // fallback: رقم عشوائي إذا فشل Supabase

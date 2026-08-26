@@ -60,7 +60,7 @@ export default function StitchAddModal({ open, onClose, onAdded }: StitchAddModa
           description: description.trim() || null,
           target: "seddari",
           active: true,
-        })
+        } as any)
         .select("id, name, price, image_url")
         .single();
 

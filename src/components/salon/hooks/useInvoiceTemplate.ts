@@ -44,11 +44,13 @@ export function useInvoiceTemplate() {
         .eq('key', 'invoice_template')
         .single();
 
-      if (error || !data) {
+      const value = (data as unknown as { value: unknown } | null)?.value;
+
+      if (error || value === undefined) {
         console.log('Using default invoice template');
         setTemplate(DEFAULT_TEMPLATE);
       } else {
-        const parsed = typeof data.value === 'string' ? JSON.parse(data.value) : data.value;
+        const parsed = typeof value === 'string' ? JSON.parse(value) : value;
         setTemplate({ ...DEFAULT_TEMPLATE, ...parsed });
       }
     } catch (err) {
@@ -67,7 +69,7 @@ export function useInvoiceTemplate() {
         key: 'invoice_template',
         value: JSON.stringify(newTemplate),
         description: 'Invoice template configuration',
-      }, { onConflict: 'key' });
+      } as never, { onConflict: 'key' });
 
     if (error) throw error;
     setTemplate(newTemplate);

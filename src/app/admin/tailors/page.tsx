@@ -18,16 +18,11 @@ import {
   formatTime,
   supabase,
 } from "@/lib/supabase-tailors";
-import type { ChatMessage } from "@/lib/supabase-tailors";
+import type { ChatMessage, Tailor } from "@/lib/supabase-tailors";
 
 // ============================================================
 // TYPES
 // ============================================================
-interface Tailor {
-  id: string; full_name: string; phone: string;
-  pin_code: string; wage_percentage: number; is_active: boolean; avatar_url?: string;
-}
-
 interface WorkItem {
   id: string; order_id: string; label: string; kind: string;
   qty: number; sewing_cost: number; created_at: string;
@@ -226,11 +221,11 @@ function ChatBubble({ msg, isAdmin }: { msg: ChatMessage; isAdmin: boolean }) {
           {!msg.is_read && !isMine && <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: C.gold }} />}
         </div>
         {msg.message_type === "text" && <p className="text-sm leading-relaxed">{msg.body}</p>}
-        {msg.message_type === "voice" && msg.media_url && <AudioPlayer url={msg.media_url} duration={msg.media_duration} />}
+        {msg.message_type === "voice" && msg.media_url && <AudioPlayer url={msg.media_url} duration={msg.media_duration ?? undefined} />}
         {(msg.message_type === "image" || msg.message_type === "camera") && msg.media_url && (
           <div className="relative">
             {!imageLoaded && <div className="w-48 h-36 rounded-xl flex items-center justify-center" style={{ backgroundColor: C.lightGray }}><RefreshCw size={24} className="animate-spin" style={{ color: C.gray }} /></div>}
-            <img src={msg.media_url} alt="صورة" className={`max-w-64 max-h-48 rounded-xl object-cover cursor-pointer transition-all hover:opacity-90 ${imageLoaded ? "block" : "hidden"}`} onLoad={() => setImageLoaded(true)} onClick={() => window.open(msg.media_url, "_blank")} />
+            <img src={msg.media_url} alt="صورة" className={`max-w-64 max-h-48 rounded-xl object-cover cursor-pointer transition-all hover:opacity-90 ${imageLoaded ? "block" : "hidden"}`} onLoad={() => setImageLoaded(true)} onClick={() => window.open(msg.media_url!, "_blank")} />
             {msg.body && msg.body !== "صورة" && <p className="text-xs mt-2 opacity-80">{msg.body}</p>}
           </div>
         )}
@@ -431,8 +426,12 @@ export default function TailorsManagementPage() {
         recipient_id: selectedTailorId,
         body: text.trim() || (type === "voice" ? "رسالة صوتية" : "صورة"),
         message_type: type,
-        media_url: mediaUrl,
-        media_duration: duration,
+        order_id: null,
+        media_url: mediaUrl ?? null,
+        media_duration: duration ?? null,
+        media_size: null,
+        attachment_url: null,
+        audio_url: null,
       });
       if (!textOverride) setNewMessage("");
     } catch (err) {
@@ -846,7 +845,7 @@ export default function TailorsManagementPage() {
                   <label className="block text-xs font-bold text-gray-700 mb-2">رقم الهاتف</label>
                   <input
                     type="text"
-                    value={selectedTailor.phone}
+                    value={selectedTailor.phone ?? ""}
                     onChange={(e) => updateSelectedTailorField("phone", e.target.value)}
                     className="w-full px-4 py-2.5 border rounded-xl text-sm focus:outline-none focus:border-[#1B5E38]"
                   />
@@ -856,7 +855,7 @@ export default function TailorsManagementPage() {
                   <label className="block text-xs font-bold text-gray-700 mb-2">رمز PIN الخاص بالدخول</label>
                   <input
                     type="text"
-                    value={selectedTailor.pin_code}
+                    value={selectedTailor.pin_code ?? ""}
                     onChange={(e) => updateSelectedTailorField("pin_code", e.target.value)}
                     required
                     className="w-full px-4 py-2.5 border rounded-xl text-sm focus:outline-none focus:border-[#1B5E38]"

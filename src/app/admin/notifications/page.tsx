@@ -134,9 +134,9 @@ export default function AdminNotificationsPage() {
         supabase.from("foam_orders").select("*, foam_products(name)").order("created_at", { ascending: false }).limit(200),
       ]);
 
-      const ordersWithParts: OrderWithParts[] = (ordersData || []).map((o) => ({
+      const ordersWithParts: OrderWithParts[] = ((ordersData || []) as DbOrder[]).map((o) => ({
         ...o,
-        parts: (partsData || []).filter((p) => p.order_id === o.id),
+        parts: ((partsData || []) as DbOrderPart[]).filter((p) => p.order_id === o.id),
       }));
 
       setOrders(ordersWithParts);
