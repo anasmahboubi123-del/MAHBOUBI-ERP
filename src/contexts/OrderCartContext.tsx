@@ -2,6 +2,8 @@
 
 import React, { createContext, useContext, useReducer, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
+import { getNextOrderNumber } from "@/features/order-center/services/orderCounter";
+import type { Database } from '@/types/database.types';
 
 /* ═══════════════════════════════════════════════════════════════
    TYPES — أنواع البيانات
@@ -210,8 +212,12 @@ export function OrderCartProvider({ children }: { children: React.ReactNode }) {
       try {
         const totals = getCartTotals();
 
+        // ─── توليد رقم الطلب التسلسلي ───
+        const orderNumber = await getNextOrderNumber();
+
         // ─── 1. حفظ رأس الطلب في "orders" ───
         const orderPayload: Record<string, any> = {
+          order_number: orderNumber,
           customer_name: cart.customerInfo.name || "زبون",
           customer_phone: cart.customerInfo.phone || "",
           customer_phone2: cart.customerInfo.phone2 || null,
@@ -235,7 +241,7 @@ export function OrderCartProvider({ children }: { children: React.ReactNode }) {
 
         const { data: orderData, error: orderError } = await supabase
           .from("orders")
-          .insert(orderPayload)
+          .insert(orderPayload as any)
           .select("id")
           .single();
 
@@ -247,7 +253,7 @@ export function OrderCartProvider({ children }: { children: React.ReactNode }) {
           };
         }
 
-        const orderId = orderData?.id;
+        const orderId = (orderData as { id?: string } | null)?.id;
         if (!orderId) {
           return { success: false, error: "لم يُرجع Supabase معرف الطلب بعد الحفظ" };
         }
@@ -259,7 +265,7 @@ export function OrderCartProvider({ children }: { children: React.ReactNode }) {
           const orderItems = cart.items.map((item) => ({
             order_id: orderId,
             kind: item.productType || "salon",
-            label: item.productName || "منتج",           // ← FIXED: عمود label المطلوب
+            label: item.productName || "منتج",
             product_type: item.productType || "salon",
             product_name: item.productName || "منتج",
             thumbnail_url: item.thumbnailUrl || null,
@@ -275,7 +281,7 @@ export function OrderCartProvider({ children }: { children: React.ReactNode }) {
 
           const { error: itemsError } = await supabase
             .from("order_items")
-            .insert(orderItems);
+            .insert(orderItems as any);
 
           if (itemsError) {
             console.error("[saveOrder] order_items insert error:", itemsError);
@@ -306,15 +312,16 @@ export function OrderCartProvider({ children }: { children: React.ReactNode }) {
   /* ─── تحميل طلب موجود ─── */
   const loadOrder = useCallback(async (orderId: string): Promise<boolean> => {
     try {
-      const { data: order, error: orderError } = await supabase
+      const { data: rawOrder, error: orderError } = await supabase
         .from("orders")
         .select("*, order_items(*)")
         .eq("id", orderId)
         .single();
+      const order = rawOrder as any;
 
       if (orderError || !order) throw orderError;
 
-      const items = (order.order_items || []).map((item: any) => ({
+      const items = ((order as any).order_items || []).map((item: any) => ({
         id: item.id,
         productType: item.kind || item.product_type || "salon",
         productName: item.product_name || item.label || "منتج",
@@ -333,7 +340,7 @@ export function OrderCartProvider({ children }: { children: React.ReactNode }) {
           customerInfo: {
             name: order.customer_name || "",
             phone: order.customer_phone || "",
-            phone2: order.customer_phone2 || "",
+            phone2: (order as any).customer_phone2 || "",
             email: order.customer_email || "",
             address: order.customer_address || "",
             city: order.customer_city || "",

@@ -1,75 +1,79 @@
-'use client';
+'use client'
 
-import Link from 'next/link';
-import { motion } from 'framer-motion';
-import { getSiteAssetUrl } from '@/lib/site-assets';
-import { useState, useEffect, useCallback } from 'react';
+import Link from 'next/link'
+import { motion } from 'framer-motion'
+import { useState, useEffect, useCallback } from 'react'
 
-function img(path: string): string {
-  return getSiteAssetUrl(path);
-}
+// ════════════════════════════════════════════════════════════════
+// الصور المحلية — أسرع ولا تعتمد على Supabase
+// ════════════════════════════════════════════════════════════════
 
 const ROLES = [
   { 
     id: 'admin',  
     title: 'المدير',  
     href: '/admin',
-    image: 'site-assets/roles/admin.PNG'
+    image: '/images/roles/admin.jpg'
   },
   { 
     id: 'seller',
     title: 'البائع',  
     href: '/seller',
-    image: 'site-assets/roles/seler.PNG'
+    image: '/images/roles/seller.jpg'
   },
   { 
     id: 'tailor', 
     title: 'الخياط',  
     href: '/tailor',
-    image: 'site-assets/roles/tailor.PNG'
+    image: '/images/roles/tailor.jpg'
   },
-];
+]
 
-const BG_IMAGE = 'site-assets/backgrounds/home-bg.PNG';
-const LOGO_IMAGE = 'site-assets/logo.jpg';
+const BG_IMAGE = '/images/salon-bg.jpg'
+const LOGO_IMAGE = '/images/logo.jpg'
 
-// ========== 1. شريط تنبيه التحديث ==========
+// ════════════════════════════════════════════════════════════════
+// 1. شريط تنبيه التحديث
+// ════════════════════════════════════════════════════════════════
 function UpdateBanner() {
-  const [showBanner, setShowBanner] = useState(false);
-  const [newVersion, setNewVersion] = useState('');
+  const [showBanner, setShowBanner] = useState(false)
+  const [newVersion, setNewVersion] = useState('')
 
   useEffect(() => {
+    if (typeof window === 'undefined') return
+
     const checkVersion = async () => {
       try {
-        const res = await fetch('/api/version', { cache: 'no-store' });
-        if (!res.ok) return;
-        const data = await res.json();
-        const current = localStorage.getItem('app-version') || '2.0.0';
+        const res = await fetch('/api/version', { cache: 'no-store' })
+        if (!res.ok) return
+        const data = await res.json()
+        const current = localStorage.getItem('app-version') || '2.0.0'
         if (data.version && data.version !== current) {
-          setNewVersion(data.version);
-          setShowBanner(true);
+          setNewVersion(data.version)
+          setShowBanner(true)
         }
       } catch {
-        // إذا لم يكن هناك API، يمكن مقارنة مع meta tag
-        const metaVersion = document.querySelector('meta[name="app-version"]')?.getAttribute('content');
-        const current = localStorage.getItem('app-version') || '2.0.0';
+        const metaVersion = document.querySelector('meta[name="app-version"]')?.getAttribute('content')
+        const current = localStorage.getItem('app-version') || '2.0.0'
         if (metaVersion && metaVersion !== current) {
-          setNewVersion(metaVersion);
-          setShowBanner(true);
+          setNewVersion(metaVersion)
+          setShowBanner(true)
         }
       }
-    };
-    checkVersion();
-    const interval = setInterval(checkVersion, 30000); // فحص كل 30 ثانية
-    return () => clearInterval(interval);
-  }, []);
+    }
+
+    checkVersion()
+    const interval = setInterval(checkVersion, 30000)
+    return () => clearInterval(interval)
+  }, [])
 
   const handleUpdate = () => {
-    localStorage.setItem('app-version', newVersion || '2.0.0');
-    window.location.reload();
-  };
+    if (typeof window === 'undefined') return
+    localStorage.setItem('app-version', newVersion || '2.0.0')
+    window.location.reload()
+  }
 
-  if (!showBanner) return null;
+  if (!showBanner) return null
 
   return (
     <motion.div
@@ -85,44 +89,48 @@ function UpdateBanner() {
         تحديث الآن
       </button>
     </motion.div>
-  );
+  )
 }
 
-// ========== 2. مؤشر الاتصال ==========
+// ════════════════════════════════════════════════════════════════
+// 2. مؤشر الاتصال
+// ════════════════════════════════════════════════════════════════
 function ConnectionStatus() {
-  const [online, setOnline] = useState(true);
-  const [serverOk, setServerOk] = useState(true);
+  const [online, setOnline] = useState(true)
+  const [serverOk, setServerOk] = useState(true)
 
   const checkServer = useCallback(async () => {
     try {
-      await fetch('/api/health', { method: 'HEAD', cache: 'no-store' });
-      setServerOk(true);
+      await fetch('/api/health', { method: 'HEAD', cache: 'no-store' })
+      setServerOk(true)
     } catch {
-      setServerOk(false);
+      setServerOk(false)
     }
-  }, []);
+  }, [])
 
   useEffect(() => {
-    const update = () => {
-      const isOnline = navigator.onLine;
-      setOnline(isOnline);
-      if (isOnline) checkServer();
-      else setServerOk(false);
-    };
-    
-    window.addEventListener('online', update);
-    window.addEventListener('offline', update);
-    update();
-    
-    const interval = setInterval(update, 15000); // فحص كل 15 ثانية
-    return () => {
-      window.removeEventListener('online', update);
-      window.removeEventListener('offline', update);
-      clearInterval(interval);
-    };
-  }, [checkServer]);
+    if (typeof window === 'undefined') return
 
-  if (online && serverOk) return null;
+    const update = () => {
+      const isOnline = navigator.onLine
+      setOnline(isOnline)
+      if (isOnline) checkServer()
+      else setServerOk(false)
+    }
+    
+    window.addEventListener('online', update)
+    window.addEventListener('offline', update)
+    update()
+    
+    const interval = setInterval(update, 15000)
+    return () => {
+      window.removeEventListener('online', update)
+      window.removeEventListener('offline', update)
+      clearInterval(interval)
+    }
+  }, [checkServer])
+
+  if (online && serverOk) return null
 
   return (
     <motion.div
@@ -132,64 +140,62 @@ function ConnectionStatus() {
     >
       {!online ? '⚠️ أنت غير متصل بالإنترنت' : '⚠️ الخادم غير متاح حالياً'}
     </motion.div>
-  );
+  )
 }
 
 export default function HomePage() {
-  const [version, setVersion] = useState('v2.0.0');
-  const [isConnected, setIsConnected] = useState(true);
-  const [lastLogin, setLastLogin] = useState('اليوم 10:25');
+  const [version, setVersion] = useState('v2.0.0')
+  const [isConnected, setIsConnected] = useState(true)
+  const [lastLogin, setLastLogin] = useState('اليوم 10:25')
 
-  // تحميل البيانات الحقيقية
   useEffect(() => {
-    // رقم الإصدار
-    const storedVersion = localStorage.getItem('app-version') || '2.0.0';
-    setVersion(`v${storedVersion}`);
+    if (typeof window === 'undefined') return
 
-    // آخر دخول
-    const saved = localStorage.getItem('last-login');
+    const storedVersion = localStorage.getItem('app-version') || '2.0.0'
+    setVersion(`v${storedVersion}`)
+
+    const saved = localStorage.getItem('last-login')
     if (saved) {
-      setLastLogin(saved);
+      setLastLogin(saved)
     } else {
-      const now = new Date();
-      const time = `${now.getHours()}:${now.getMinutes().toString().padStart(2, '0')}`;
-      const dateStr = `اليوم ${time}`;
-      localStorage.setItem('last-login', dateStr);
-      setLastLogin(dateStr);
+      const now = new Date()
+      const time = `${now.getHours()}:${now.getMinutes().toString().padStart(2, '0')}`
+      const dateStr = `اليوم ${time}`
+      localStorage.setItem('last-login', dateStr)
+      setLastLogin(dateStr)
     }
 
-    // فحص الاتصال الحقيقي
     const check = async () => {
       try {
-        await fetch('/api/health', { method: 'HEAD', cache: 'no-store' });
-        setIsConnected(true);
+        await fetch('/api/health', { method: 'HEAD', cache: 'no-store' })
+        setIsConnected(true)
       } catch {
-        setIsConnected(navigator.onLine);
+        setIsConnected(navigator.onLine)
       }
-    };
-    check();
-    const interval = setInterval(check, 10000);
-    return () => clearInterval(interval);
-  }, []);
+    }
+    check()
+    const interval = setInterval(check, 10000)
+    return () => clearInterval(interval)
+  }, [])
 
   const forceReload = () => {
+    if (typeof window === 'undefined') return
     if ('caches' in window) {
-      caches.keys().then(names => names.forEach(name => caches.delete(name)));
+      caches.keys().then(names => names.forEach(name => caches.delete(name)))
     }
-    window.location.reload();
-  };
+    window.location.reload()
+  }
 
   return (
     <main className="relative min-h-screen flex flex-col items-center overflow-hidden" dir="rtl" style={{ fontFamily: 'Cairo, sans-serif' }}>
       
-      {/* المميزات الجديدة */}
       <UpdateBanner />
       <ConnectionStatus />
 
       {/* Background */}
       <div className="absolute inset-0 z-0">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={img(BG_IMAGE)} alt="" className="w-full h-full object-cover" />
+        <img src={BG_IMAGE} alt="" className="w-full h-full object-cover" />
         <div className="absolute inset-0" style={{ backgroundColor: 'rgba(245,236,215,0.78)' }} />
       </div>
 
@@ -199,7 +205,7 @@ export default function HomePage() {
         <motion.div initial={{ opacity: 0, y: -30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7 }} className="flex flex-col items-center mb-2">
           <div className="w-20 h-20 relative mb-2">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={img(LOGO_IMAGE)} alt="El Mahboubi" className="w-full h-full object-contain" />
+            <img src={LOGO_IMAGE} alt="El Mahboubi" className="w-full h-full object-contain" />
           </div>
           <h1 className="text-[#1B5E3B] font-bold text-sm tracking-[0.2em] text-center leading-tight">
             AMEUBLEMENT<br />ET DÉCO<br />EL MAHBOUBI
@@ -232,7 +238,7 @@ export default function HomePage() {
                 <div className="relative w-full bg-gradient-to-b from-[#C9A84C] to-[#b8943f] p-[3px] transition-transform duration-300 group-hover:scale-[1.03]" style={{ borderRadius: '50% 50% 10px 10px / 30% 30% 10px 10px', boxShadow: '0 8px 32px rgba(33,71,52,0.25)' }}>
                   <div className="relative w-full overflow-hidden bg-[#FFFDF8]" style={{ borderRadius: '50% 50% 8px 8px / 30% 30% 8px 8px', aspectRatio: '0.85' }}>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={img(role.image)} alt={role.title} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
+                    <img src={role.image} alt={role.title} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
                     <div className="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-[#FFFDF8] to-transparent" />
                   </div>
                 </div>
@@ -251,11 +257,10 @@ export default function HomePage() {
         <div className="flex-1" />
       </div>
 
-      {/* Footer — تفاعلي حقيقي */}
+      {/* Footer */}
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.8, duration: 0.5 }} className="relative z-10 w-full" style={{ backgroundColor: '#1B5E3B' }}>
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between text-white/80 text-xs">
           
-          {/* اللغة */}
           <div className="flex items-center gap-4">
             <span className="flex items-center gap-1">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -265,9 +270,7 @@ export default function HomePage() {
             </span>
           </div>
 
-          {/* الوسط: الإصدار + متصل */}
           <div className="flex items-center gap-3">
-            {/* زر الإصدار — قابل للنقر لإعادة التحميل */}
             <button
               onClick={forceReload}
               className="flex items-center gap-1.5 text-white/60 hover:text-white transition-colors cursor-pointer"
@@ -279,14 +282,12 @@ export default function HomePage() {
               </svg>
             </button>
 
-            {/* مؤشر الاتصال الحقيقي */}
             <span className="flex items-center gap-1.5">
               <span className={`w-2 h-2 rounded-full animate-pulse ${isConnected ? 'bg-green-400' : 'bg-red-400'}`} />
               <span>{isConnected ? 'متصل' : 'غير متصل'}</span>
             </span>
           </div>
 
-          {/* آخر دخول — حقيقي من localStorage */}
           <div className="flex items-center gap-2 text-white/60">
             <span>آخر دخول</span>
             <span className="text-white/40">{lastLogin}</span>
@@ -294,5 +295,5 @@ export default function HomePage() {
         </div>
       </motion.div>
     </main>
-  );
+  )
 }

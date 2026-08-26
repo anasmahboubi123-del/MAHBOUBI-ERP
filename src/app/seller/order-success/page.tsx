@@ -9,11 +9,15 @@ const C = { green: "#1B5E38", gold: "#C9A84C", dark: "#0D1F17" };
 
 interface OrderData {
   id: string;
+  order_number: string | null;
   customer_name: string;
   customer_phone: string;
   total: number;
+  total_amount: number | null;
   deposit: number;
+  deposit_amount: number | null;
   status: string;
+  delivery_expected_date: string | null;
   created_at: string;
 }
 
@@ -48,7 +52,7 @@ function OrderSuccessContent() {
     try {
       const { data, error } = await supabase
         .from("orders")
-        .select("id, customer_name, customer_phone, total, deposit, status, created_at")
+        .select("id, order_number, customer_name, customer_phone, total, total_amount, deposit, deposit_amount, status, delivery_expected_date, created_at")
         .eq("id", id)
         .single();
 
@@ -63,7 +67,47 @@ function OrderSuccessContent() {
 
   const docType = type === "bc" ? "bon_de_commande" : "devis";
   const docLabel = type === "bc" ? "بون دي كوموند" : "دوفي";
-  const orderNumber = orderId?.slice(0, 8).toUpperCase() || "—";
+
+  // ✅ استخدام order_number من قاعدة البيانات، وإلا استخدام أول 8 أحرف من UUID
+  const orderNumber = order?.order_number || orderId?.slice(0, 8).toUpperCase() || "—";
+
+  // ✅ المجموع: total أولاً، ثم total_amount كاحتياطي
+  const displayTotal = order ? (order.total || order.total_amount || 0) : 0;
+
+  // ✅ العربون: deposit أولاً، ثم deposit_amount كاحتياطي
+  const displayDeposit = order ? (order.deposit || order.deposit_amount || 0) : 0;
+
+  // ✅ موعد التسليم
+  const deliveryDate = order?.delivery_expected_date
+    ? new Date(order.delivery_expected_date).toLocaleDateString("ar-MA", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      })
+    : null;
+
+  // ✅ رابط WhatsApp مع رسالة كاملة
+  const getWhatsAppLink = () => {
+    if (!order?.customer_phone) return "#";
+
+    const phone = order.customer_phone.replace(/[^0-9]/g, "");
+    const cleanPhone = phone.startsWith("0") ? phone.slice(1) : phone;
+
+    const message =
+      `🎉 شكراً لاختياركم *مؤسسة محبوبي*!\n\n` +
+      `📋 *تفاصيل طلبكم:*\n` +
+      `• رقم الطلب: *${orderNumber}*\n` +
+      `• المبلغ الإجمالي: *${displayTotal.toFixed(2)} د.م*\n` +
+      `${displayDeposit > 0 ? `• العربون المدفوع: *${displayDeposit.toFixed(2)} د.م*\n` : ""}` +
+      `${deliveryDate ? `• موعد التسليم المتوقع: *${deliveryDate}*\n` : ""}\n` +
+      `⏳ *سنرسل لكم رسالة فور جاهزية الطلبية.*\n\n` +
+      `📲 *تابعونا على مواقع التواصل الاجتماعي:*\n` +
+      `• Instagram: @mahboubi.ma\n` +
+      `• Facebook: mahboubi.ma\n\n` +
+      `🙏 نشكر ثقتكم بنا ونتمنى لكم يوماً سعيداً!`;
+
+    return `https://wa.me/212${cleanPhone}?text=${encodeURIComponent(message)}`;
+  };
 
   if (loading) {
     return (
@@ -109,12 +153,23 @@ function OrderSuccessContent() {
               الزبون: {order.customer_name}
             </p>
           )}
+
+          {/* ✅ المجموع الإجمالي */}
           <p className="text-2xl font-bold mt-3" style={{ color: C.dark }}>
-            {order.total?.toFixed(2) || "0.00"} د.م
+            {displayTotal.toFixed(2)} د.م
           </p>
-          {order.deposit > 0 && (
+
+          {/* ✅ العربون */}
+          {displayDeposit > 0 && (
             <p className="text-sm text-gray-500 mt-1">
-              العربون: {order.deposit.toFixed(2)} د.م
+              العربون: {displayDeposit.toFixed(2)} د.م
+            </p>
+          )}
+
+          {/* ✅ موعد التسليم */}
+          {deliveryDate && (
+            <p className="text-sm mt-2" style={{ color: C.green }}>
+              📅 موعد التسليم المتوقع: {deliveryDate}
             </p>
           )}
         </div>
@@ -142,9 +197,10 @@ function OrderSuccessContent() {
             طباعة سريعة
           </button>
 
+          {/* ✅ زر WhatsApp محسّن */}
           {order.customer_phone && (
             <a
-              href={`https://wa.me/${order.customer_phone.replace(/[^0-9]/g, "")}?text=مرحباً ${order.customer_name}، تم إنشاء طلبك رقم ${orderNumber}`}
+              href={getWhatsAppLink()}
               target="_blank"
               rel="noopener noreferrer"
               className="w-full py-3 rounded-xl font-bold border-2 border-green-200 text-green-700 flex items-center justify-center gap-2 transition hover:bg-green-50"

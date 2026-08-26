@@ -1,20 +1,25 @@
 {
-  "short_name": "MAHBOUBI ERP",
-  "name": "MAHBOUBI ERP System",
+  "name": "المحبوبي — ERP",
+  "short_name": "المحبوبي",
+  "description": "نظام إدارة محل الأثاث والتنجيد المحبوبي",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#FAFAF8",
+  "theme_color": "#1B5E3B",
+  "orientation": "portrait",
   "icons": [
     {
-      "src": "/icon-192x192.png",
+      "src": "/images/icon-192x192.png",
       "sizes": "192x192",
       "type": "image/png"
     },
     {
-      "src": "/icon-512x512.png",
+      "src": "/images/icon-512x512.png",
       "sizes": "512x512",
       "type": "image/png"
     }
   ],
-  "start_url": "/",
-  "display": "standalone",
-  "theme_color": "#000000",
-  "background_color": "#ffffff"
+  "categories": ["business", "productivity"],
+  "lang": "ar",
+  "dir": "rtl"
 }

@@ -1,6 +1,11 @@
-import { createClient } from '@supabase/supabase-js';
+// ════════════════════════════════════════════════════════════════
+// src/lib/supabaseClient.ts
+// ════════════════════════════════════════════════════════════════
+// ⚠️  تم الدمج: هذا الملف يعيد التصدير من supabase.ts لتجنب تكرار
+//    إنشاء عميل Supabase والحفاظ على التوافق مع الملفات المستوردة.
+// ════════════════════════════════════════════════════════════════
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+import { supabase } from './supabase'
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+export { supabase }
+export default supabase

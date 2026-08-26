@@ -1,588 +1,68 @@
-"use client";
+'use client';
 
-import React, { useState, useEffect, useRef } from "react";
-import { useParams } from "next/navigation";
-import Link from "next/link";
-import { supabase } from "@/lib/supabase";
-import PrintModal from "@/features/order-center/components/PrintModal";
-import type { DocumentType, ProductType } from "@/features/order-center/types";
+import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
+import { useParams } from 'next/navigation';
+import {
+  fetchOrderById, fetchWorkflowSteps, fetchCarpenterPayments,
+  fetchOrderReminders, fetchDelayLogs, fetchInvoiceArchive,
+  getTrackingSteps, addCarpenterPayment, deleteCarpenterPayment,
+  startWorkflowStep, completeWorkflowStep, logDeliveryDelay,
+  updateOrderWorkflowStatus, archiveOrder, getOrCreateTrackingToken,
+  formatCurrency, getDaysLeft, getPriorityLevel,
+  getProductLabel, getWorkflowStatusLabel, getCarpenterRemaining,
+  type UnifiedOrder, type WorkflowStep, type CarpenterPayment,
+  type OrderReminder, type DelayLog, type InvoiceArchiveItem,
+} from '@/lib/orders-unified';
+import {
+  ArrowRight, Calendar, User, Phone, MapPin, Package,
+  Scissors, CheckCircle, Clock, AlertTriangle, Bell,
+  DollarSign, CreditCard, FileText, Image, MessageSquare,
+  ClipboardCopy, Archive, RotateCcw, ChevronDown, ChevronUp,
+  Plus, Trash2, Save, Send,
+} from 'lucide-react';
 
-/* ─── Types ─── */
-interface ChatMessage {
-  id: string;
-  sender: "manager" | "tailor";
-  senderName: string;
-  text: string;
-  time: string;
-  type?: "text" | "image";
-  imageUrl?: string;
-}
+type TabType = 'info' | 'workflow' | 'payments' | 'reminders' | 'delays' | 'invoices';
 
-interface ProductionTaskUI {
-  id: string;
-  productName: string;
-  productType: string;
-  status: string;
-  assignedToName?: string;
-  priority: string;
-  details?: any;
-  dueDate?: string;
-}
-
-interface TimelineEvent {
-  id: string;
-  date: string;
-  title: string;
-  actor: string;
-  completed: boolean;
-}
-
-interface PaymentUI {
-  id: string;
-  amount: number;
-  method: string;
-  type: string;
-  date: string;
-  notes?: string;
-}
-
-interface OrderItemUI {
-  id: string;
-  productType: string;
-  productName: string;
-  quantity: number;
-  unitPrice: number;
-  totalPrice: number;
-  thumbnailUrl?: string;
-  details?: any;
-  calculations?: any;
-  lineNotes?: string;
-  notes?: string;
-}
-
-// ✅ NEW: Foam types
-interface FoamOrder {
-  id: string;
-  order_number: string;
-  invoice_number: string;
-  product_id: string;
-  product_name: string;
-  height_cm: number;
-  width_cm: number;
-  price_per_meter: number;
-  square_corner_price: number;
-  triangle_corner_price: number;
-  total_length_meters: number;
-  seddars_total: number;
-  square_corners_count: number;
-  square_corners_total: number;
-  triangle_corners_count: number;
-  triangle_corners_total: number;
-  subtotal: number;
-  price_adjustment_type: string | null;
-  price_adjustment_value: number;
-  price_adjustment_reason: string | null;
-  final_total: number;
-  customer_name: string;
-  customer_phone: string | null;
-  delivery_date: string | null;
-  notes: string | null;
-  deposit_amount: number;
-  remaining_amount: number;
-  status: string;
-  supplier_id: string | null;
-  created_by: string | null;
-  created_by_role: string | null;
-  created_at?: string;
-  updated_at?: string;
-  foam_products?: { name: string } | null;
-  suppliers?: { name: string } | null;
-}
-
-interface FoamOrderSeddar {
-  id: string;
-  order_id: string;
-  length_meters: number;
-  sort_order: number;
-  created_at?: string;
-}
-
-/* ─── Helpers ─── */
-const statusColors: Record<string, string> = {
-  draft: "bg-gray-500", quotation: "bg-purple-500", waiting_deposit: "bg-yellow-500",
-  confirmed: "bg-blue-500", production: "bg-indigo-500", tailor_working: "bg-pink-500",
-  quality_check: "bg-orange-500", ready: "bg-green-500", delivered: "bg-emerald-600",
-  invoiced: "bg-cyan-500", paid: "bg-green-600", cancelled: "bg-red-600", archived: "bg-gray-400",
-  pending: "bg-amber-500", sent_to_supplier: "bg-blue-500", in_production: "bg-indigo-500",
-};
-
-const statusLabels: Record<string, string> = {
-  draft: "مسودة", quotation: "عرض سعر", waiting_deposit: "انتظار العربون",
-  confirmed: "مؤكد", production: "قيد الإنتاج", tailor_working: "الخياط يعمل",
-  quality_check: "فحص الجودة", ready: "جاهز", delivered: "مُسلّم",
-  invoiced: "مفوتر", paid: "مدفوع", cancelled: "ملغي", archived: "مؤرشف",
-  pending: "معلق", sent_to_supplier: "مرسل للمورد", in_production: "قيد الإنتاج",
-};
-
-const taskStatusLabels: Record<string, string> = {
-  pending: "في الانتظار", in_progress: "قيد العمل", completed: "مكتمل", issue: "مشكلة",
-};
-
-const partTypeIcons: Record<string, string> = {
-  salon: "🛋️", tapis: "🧶", wood: "🪵", foam: "🧽", khamiya: "🧵", accessoire: "📦",
-};
-
-const noteTemplates = ["جودة عالية", "عاجل", "تأكد من اللون", "مخاد إضافية", "لحايف"];
-
-function getDaysLeft(deliveryDate: string | null): number {
-  if (!deliveryDate) return 999;
-  const today = new Date(); today.setHours(0,0,0,0);
-  const target = new Date(deliveryDate); target.setHours(0,0,0,0);
-  return Math.ceil((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-}
-
-function formatCurrency(n: number): string {
-  return n?.toLocaleString("ar-MA", { minimumFractionDigits: 2 }) + " DH";
-}
-
-/* ─── Tabs Components (unchanged from your file) ─── */
-function TimelineTab({ events }: { events: TimelineEvent[] }) {
-  return (
-    <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-      <h3 className="text-lg font-bold text-gray-800 mb-6">📊 سير العمل</h3>
-      <div className="relative pr-4">
-        <div className="absolute right-2 top-0 bottom-0 w-0.5 bg-gray-200" />
-        {events.map((ev, idx) => (
-          <div key={ev.id} className="relative flex items-start gap-4 mb-8 last:mb-0">
-            <div className={`absolute right-0 top-1 w-4 h-4 rounded-full border-2 border-white shadow ${
-              ev.completed ? "bg-green-500" : idx === events.findIndex((e) => !e.completed) ? "bg-blue-500 animate-pulse" : "bg-gray-300"
-            }`} />
-            <div className="mr-8">
-              <p className="text-sm text-gray-500">{ev.date}</p>
-              <p className="font-semibold text-gray-800">{ev.title}</p>
-              <p className="text-sm text-gray-600">{ev.actor}</p>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function ChatTab({ orderId, initialMessages }: { orderId: string; initialMessages: ChatMessage[] }) {
-  const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
-  const [newMessage, setNewMessage] = useState("");
-  const chatEndRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
-
-  useEffect(() => {
-    const channel = supabase.channel(`order_chat_${orderId}`).on(
-      "postgres_changes",
-      { event: "INSERT", schema: "public", table: "messages", filter: `order_id=eq.${orderId}` },
-      (payload) => {
-        const msg = payload.new as any;
-        setMessages((prev) => [...prev, {
-          id: msg.id, sender: msg.sender_role === "admin" ? "manager" : "tailor",
-          senderName: msg.sender_name || "—", text: msg.body || "",
-          time: new Date(msg.created_at || "").toLocaleTimeString("ar-MA", { hour: "2-digit", minute: "2-digit" }),
-          type: msg.attachment_url ? "image" : "text", imageUrl: msg.attachment_url || undefined,
-        }]);
-      }
-    ).subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [orderId]);
-
-  const onSend = async () => {
-    if (!newMessage.trim()) return;
-    const { error } = await supabase.from("messages").insert({
-      order_id: orderId, sender_role: "admin", sender_name: "المدير", body: newMessage,
-    });
-    if (error) { alert("فشل إرسال الرسالة"); return; }
-    setNewMessage("");
-  };
-
-  return (
-    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col h-[600px]">
-      <div className="p-4 border-b border-gray-100"><h3 className="text-lg font-bold text-gray-800">💬 محادثة الطلبية</h3></div>
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {messages.map((msg) => (
-          <div key={msg.id} className={`flex ${msg.sender === "manager" ? "justify-end" : "justify-start"}`}>
-            <div className={`max-w-[70%] rounded-2xl px-4 py-3 ${
-              msg.sender === "manager" ? "bg-[#1B5E38] text-white rounded-bl-none" : "bg-gray-100 text-gray-800 rounded-br-none"
-            }`}>
-              <p className="text-xs opacity-70 mb-1">{msg.senderName} ({msg.time})</p>
-              {msg.type === "image" ? <div className="bg-white/20 rounded-lg p-2 text-sm">📷 {msg.text}</div> : <p className="text-sm leading-relaxed">{msg.text}</p>}
-            </div>
-          </div>
-        ))}
-        <div ref={chatEndRef} />
-      </div>
-      <div className="p-4 border-t border-gray-100 bg-white">
-        <div className="flex gap-2">
-          <input type="text" value={newMessage} onChange={(e) => setNewMessage(e.target.value)} onKeyDown={(e) => e.key === "Enter" && onSend()}
-            placeholder="اكتب رسالة..." className="flex-1 px-4 py-2 border border-gray-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-[#1B5E38]" />
-          <button onClick={onSend} className="px-5 py-2 bg-[#1B5E38] text-white rounded-xl text-sm font-bold hover:bg-[#14502d] transition">إرسال ➤</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function MediaTab({ initialImages, initialNotes, orderId }: { initialImages: string[]; initialNotes: string[]; orderId: string }) {
-  const [images, setImages] = useState<string[]>(initialImages);
-  const [notes, setNotes] = useState<string[]>(initialNotes);
-  const [newNote, setNewNote] = useState("");
-
-  const addNote = async () => {
-    if (!newNote.trim()) return;
-    const updated = [...notes, newNote];
-    setNotes(updated); setNewNote("");
-    await supabase.from("orders").update({ production_notes: updated.join("\n") }).eq("id", orderId);
-  };
-  const addTemplate = (tag: string) => setNewNote((prev) => (prev ? prev + "، " + tag : tag));
-
-  return (
-    <div className="space-y-6">
-      <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-        <h3 className="text-lg font-bold text-gray-800 mb-4">📸 صور الثوب الفعلي (للخياط)</h3>
-        <div className="flex flex-wrap gap-3">
-          {images.map((img, i) => (
-            <div key={i} className="w-24 h-24 bg-gray-100 rounded-xl flex items-center justify-center text-2xl border border-gray-200">📷</div>
-          ))}
-          <button className="w-24 h-24 border-2 border-dashed border-gray-300 rounded-xl flex items-center justify-center text-gray-400 hover:border-[#1B5E38] hover:text-[#1B5E38] transition">+ إضافة</button>
-        </div>
-      </div>
-      <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-        <h3 className="text-lg font-bold text-gray-800 mb-4">📝 ملاحظات تقنية للخياط</h3>
-        <ul className="space-y-2 mb-4">
-          {notes.map((note, i) => <li key={i} className="flex items-start gap-2 text-gray-700 text-sm"><span className="text-[#1B5E38]">•</span>{note}</li>)}
-        </ul>
-        <div className="flex gap-2 mb-4">
-          <input type="text" value={newNote} onChange={(e) => setNewNote(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addNote()}
-            placeholder="أضف ملاحظة سريعة..." className="flex-1 px-4 py-2 border border-gray-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-[#1B5E38]" />
-          <button onClick={addNote} className="px-4 py-2 bg-[#1B5E38] text-white rounded-xl text-sm font-bold hover:bg-[#14502d] transition">➕ إضافة</button>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {noteTemplates.map((tag) => (
-            <button key={tag} onClick={() => addTemplate(tag)} className="px-3 py-1.5 bg-[#F5F6E8] text-[#1B5E38] rounded-lg text-xs font-semibold border border-[#1B5E38]/20 hover:bg-[#1B5E38] hover:text-white transition">{tag}</button>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ProductionTab({ items, tasks, onRefresh }: { items: OrderItemUI[]; tasks: ProductionTaskUI[]; onRefresh: () => void }) {
-  const [tailorName, setTailorName] = useState("");
-  const [showAssignFor, setShowAssignFor] = useState<string | null>(null);
-
-  const assignTailor = async (taskId: string, name: string) => {
-    if (!name.trim()) return;
-    await supabase.from("production_tasks").update({
-      assigned_to: "tailor-" + Date.now(), assigned_to_name: name, status: "in_progress", started_at: new Date().toISOString(),
-    }).eq("id", taskId);
-    setTailorName(""); setShowAssignFor(null); onRefresh();
-  };
-  const completeTask = async (taskId: string) => {
-    await supabase.from("production_tasks").update({ status: "completed", completed_at: new Date().toISOString() }).eq("id", taskId);
-    onRefresh();
-  };
-  const sendWhatsApp = (phone: string, message: string) => {
-    window.open(`https://wa.me/${phone.replace(/\D/g, "")}?text=${encodeURIComponent(message)}`, "_blank");
-  };
-
-  return (
-    <div className="space-y-6">
-      <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-        <h3 className="text-lg font-bold text-gray-800 mb-4">📦 المنتجات</h3>
-        <div className="space-y-4">
-          {items.map((item) => (
-            <div key={item.id} className="p-4 rounded-xl border border-gray-200 bg-gray-50">
-              <div className="flex items-start justify-between gap-4">
-                <div className="flex items-center gap-3">
-                  <span className="text-2xl">{partTypeIcons[item.productType] || "📦"}</span>
-                  <div>
-                    <span className="text-xs px-2 py-0.5 rounded bg-green-100 text-green-800 font-bold">{item.productType}</span>
-                    <h4 className="font-bold text-gray-800 mt-1">{item.productName}</h4>
-                    {item.lineNotes && <p className="text-xs text-amber-600 mt-1">📝 {item.lineNotes}</p>}
-                  </div>
-                </div>
-                <div className="text-left">
-                  <p className="font-bold text-lg text-[#1B5E38]">{formatCurrency(item.totalPrice)}</p>
-                  <p className="text-xs text-gray-400">الكمية: {item.quantity}</p>
-                </div>
-              </div>
-
-              {item.details?.isRomani && (
-                <div className="mt-3 p-3 bg-amber-50 rounded-xl border border-amber-100">
-                  <p className="font-bold text-amber-800 text-sm mb-2">🛋️ صالون رومي — {item.details.model?.name} ({item.details.color?.name})</p>
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-xs text-gray-700">
-                    <span>📐 سدادر: {item.calculations?.seddarsCount || 0}</span>
-                    <span>📏 الطول: {item.calculations?.totalLengthMeters || 0} م</span>
-                    <span>🧽 كوتيك: +{item.calculations?.totalKotikMeters || 0} م</span>
-                    <span>🧽 فورمجة: {item.calculations?.totalFormajaMeters || 0} م</span>
-                    <span>📊 المجموع: {item.calculations?.totalMeters || 0} م</span>
-                    <span>💰 السعر: {item.totalPrice?.toLocaleString()} درهم</span>
-                  </div>
-                </div>
-              )}
-
-              {item.details && !item.details.isRomani && (
-                <div className="mt-3 text-xs text-gray-600 grid grid-cols-2 gap-1">
-                  {item.details.seddari && <span>📐 سداري: {item.details.seddari.lengthCm}×{item.details.seddari.widthCm} سم</span>}
-                  {item.details.fabric && <span>🧵 قماش: {item.details.fabric.name}</span>}
-                  {item.details.dimensions?.areaSqm && <span>📏 مساحة: {item.details.dimensions.areaSqm} م²</span>}
-                  {item.calculations?.fabricLengthCm && <span>🧵 طول القماش: {item.calculations.fabricLengthCm.toFixed(0)} سم</span>}
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-        <h3 className="text-lg font-bold text-gray-800 mb-4">🪡 مهام الإنتاج</h3>
-        {tasks.length === 0 && <p className="text-gray-400 text-sm">لا توجد مهام إنتاج. اضغط "تأكيد الطلب" لإنشائها.</p>}
-        <div className="space-y-4">
-          {tasks.map((task) => (
-            <div key={task.id} className="p-4 rounded-xl border border-gray-200">
-              <div className="flex items-start justify-between">
-                <div>
-                  <p className="font-bold">{task.productName}</p>
-                  <p className="text-xs text-gray-500">{task.productType} · {taskStatusLabels[task.status]}</p>
-                  {task.assignedToName && <p className="text-xs text-blue-600 mt-1">👤 مُسند إلى: {task.assignedToName}</p>}
-                </div>
-                <span className={`px-3 py-1 rounded-full text-xs font-bold ${
-                  task.status === "completed" ? "bg-green-100 text-green-700" : task.status === "in_progress" ? "bg-blue-100 text-blue-700" : "bg-yellow-100 text-yellow-700"
-                }`}>{taskStatusLabels[task.status]}</span>
-              </div>
-
-              {task.status === "pending" && (
-                <div className="mt-3">
-                  {showAssignFor === task.id ? (
-                    <div className="flex gap-2">
-                      <input type="text" value={tailorName} onChange={(e) => setTailorName(e.target.value)} placeholder="اسم الخياط/النجار" className="flex-1 px-3 py-2 rounded-lg border border-gray-200 text-sm" />
-                      <button onClick={() => assignTailor(task.id, tailorName)} className="px-4 py-2 bg-[#1B5E38] text-white rounded-lg text-sm font-bold">إسناد</button>
-                      <button onClick={() => setShowAssignFor(null)} className="px-3 py-2 text-gray-500 text-sm">إلغاء</button>
-                    </div>
-                  ) : (
-                    <button onClick={() => setShowAssignFor(task.id)} className="px-4 py-2 bg-[#1B5E38] text-white rounded-xl text-sm font-bold hover:bg-[#14502d] transition">👤 إسناد لخياط/نجار</button>
-                  )}
-                </div>
-              )}
-              {task.status === "in_progress" && (
-                <button onClick={() => completeTask(task.id)} className="mt-3 px-4 py-2 bg-green-600 text-white rounded-xl text-sm font-bold hover:bg-green-700 transition">✅ إكمال المهمة</button>
-              )}
-              {task.details?.notes && <p className="mt-2 text-xs text-gray-500 bg-amber-50 p-2 rounded">📝 {task.details.notes}</p>}
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-        <h3 className="text-lg font-bold text-gray-800 mb-4">📞 موردين / واتساب</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <button onClick={() => sendWhatsApp("0667747091", "مرحباً، أحتاج استفسار بخصوص طلبية")} className="p-4 rounded-xl border border-green-200 bg-green-50 hover:bg-green-100 transition text-right">
-            <p className="font-bold text-green-800">🧵 مورد قماش</p><p className="text-xs text-green-600">0667-74-70-91 · اضغط للواتساب</p>
-          </button>
-          <button onClick={() => sendWhatsApp("0660000000", "مرحباً، أحتاج زربية")} className="p-4 rounded-xl border border-blue-200 bg-blue-50 hover:bg-blue-100 transition text-right">
-            <p className="font-bold text-blue-800">🧶 شركة الزرابي</p><p className="text-xs text-blue-600">اضغط للاتصال بالشركة</p>
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function FinancialTab({ order, payments }: { order: any; payments: PaymentUI[] }) {
-  const [newPayment, setNewPayment] = useState({ amount: "", method: "cash", type: "partial", notes: "" });
-  const [loading, setLoading] = useState(false);
-
-  const addPayment = async () => {
-    const amount = parseFloat(newPayment.amount);
-    if (!amount || amount <= 0) return;
-    setLoading(true);
-    await supabase.from("payments").insert({
-      order_id: order.id, amount, method: newPayment.method, type: newPayment.type, notes: newPayment.notes, date: new Date().toISOString(),
-    });
-    const { data: orderRow } = await supabase.from("orders").select("total_amount, deposit_amount").eq("id", order.id).single();
-    if (orderRow) {
-      const newDeposit = (orderRow.deposit_amount || 0) + amount;
-      const newRemaining = Math.max(0, (orderRow.total_amount || 0) - newDeposit);
-      const newStatus = newRemaining <= 0 ? "paid" : order.status;
-      await supabase.from("orders").update({ deposit_amount: newDeposit, remaining_amount: newRemaining, status: newStatus, updated_at: new Date().toISOString() }).eq("id", order.id);
-    }
-    setNewPayment({ amount: "", method: "cash", type: "partial", notes: "" }); setLoading(false);
-    window.location.reload();
-  };
-
-  return (
-    <div className="space-y-6">
-      <div className="bg-white rounded-2xl border-2 border-[#C9A84C] overflow-hidden">
-        <div className="p-4 bg-[#C9A84C]/10"><h3 className="font-bold text-lg flex items-center gap-2">💰 الملخص المالي</h3></div>
-        <div className="p-4 space-y-2 text-sm">
-          <div className="flex justify-between"><span className="text-gray-600">المجموع الفرعي</span><span className="font-bold">{formatCurrency(order.subtotal || 0)}</span></div>
-          {(order.discount_amount || 0) > 0 && <div className="flex justify-between text-red-600"><span>الخصم</span><span className="font-bold">-{formatCurrency(order.discount_amount)}</span></div>}
-          {(order.delivery_cost || 0) > 0 && <div className="flex justify-between"><span className="text-gray-600">التوصيل</span><span className="font-bold">{formatCurrency(order.delivery_cost)}</span></div>}
-          <div className="flex justify-between text-lg font-bold pt-2 border-t"><span>الإجمالي</span><span className="text-[#C9A84C]">{formatCurrency(order.total_amount || 0)}</span></div>
-          <div className="flex justify-between text-sm"><span className="text-gray-500">التسبيق</span><span className="font-bold">{formatCurrency(order.deposit_amount || 0)}</span></div>
-          <div className="flex justify-between text-sm font-bold"><span className="text-gray-500">الباقي</span><span>{formatCurrency(order.remaining_amount || 0)}</span></div>
-        </div>
-      </div>
-
-      <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-        <h3 className="text-lg font-bold text-gray-800 mb-4">📋 سجل الدفعات</h3>
-        {payments.length === 0 && <p className="text-gray-400 text-sm">لا توجد دفعات مسجلة.</p>}
-        <div className="space-y-2">
-          {payments.map((p) => (
-            <div key={p.id} className="flex justify-between items-center p-3 rounded-lg bg-gray-50">
-              <div>
-                <p className="font-bold text-sm">{p.type === "deposit" ? "عربون" : p.type === "full" ? "دفع كامل" : "دفعة جزئية"}</p>
-                <p className="text-xs text-gray-500">{new Date(p.date).toLocaleDateString("ar-MA")} · {p.method}</p>
-              </div>
-              <span className="font-bold text-[#1B5E38]">{formatCurrency(p.amount)}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-        <h3 className="text-lg font-bold text-gray-800 mb-4">➕ إضافة دفعة</h3>
-        <div className="grid grid-cols-2 gap-3">
-          <input type="number" value={newPayment.amount} onChange={(e) => setNewPayment({ ...newPayment, amount: e.target.value })} placeholder="المبلغ" className="px-4 py-3 rounded-lg border-2 border-gray-200 outline-none focus:border-[#1B5E38] text-left" />
-          <select value={newPayment.method} onChange={(e) => setNewPayment({ ...newPayment, method: e.target.value })} className="px-4 py-3 rounded-lg border-2 border-gray-200 outline-none focus:border-[#1B5E38]">
-            <option value="cash">نقدي</option><option value="bank_transfer">تحويل بنكي</option><option value="cheque">شيك</option><option value="card">بطاقة</option>
-          </select>
-        </div>
-        <div className="mt-3">
-          <select value={newPayment.type} onChange={(e) => setNewPayment({ ...newPayment, type: e.target.value })} className="w-full px-4 py-3 rounded-lg border-2 border-gray-200 outline-none focus:border-[#1B5E38]">
-            <option value="deposit">عربون</option><option value="partial">دفعة جزئية</option><option value="full">دفع كامل</option>
-          </select>
-        </div>
-        <button onClick={addPayment} disabled={loading} className="w-full mt-3 py-3 bg-[#1B5E38] text-white rounded-xl font-bold hover:bg-[#14502d] transition disabled:opacity-50">{loading ? "..." : "✅ تسجيل الدفعة"}</button>
-      </div>
-    </div>
-  );
-}
-
-function PrintModalAdapter({ order, items, onClose }: { order: any; items: OrderItemUI[]; onClose: () => void }) {
-  const [docType, setDocType] = useState<DocumentType>("devis");
-  const [includePrices, setIncludePrices] = useState(true);
-  const [includeDetails, setIncludeDetails] = useState(true);
-
-  const orderItemsForPrint = items.map((it) => ({
-    id: it.id, orderItemId: it.id, productType: it.productType as ProductType, productName: it.productName,
-    quantity: it.quantity, unitPrice: it.unitPrice, totalPrice: it.totalPrice,
-    details: it.details || {}, calculations: it.calculations || {}, thumbnailUrl: it.thumbnailUrl, addedAt: new Date().toISOString(),
-  }));
-
-  return (
-    <PrintModal orderItems={orderItemsForPrint} orderNumber={String(order.order_number || order.id?.slice(0, 8))}
-      customerName={order.customer_name || "—"} customerPhone={order.customer_phone || "—"} customerCity={order.customer_city}
-      totalAmount={order.total_amount || 0} discountAmount={order.discount_amount || 0} depositAmount={order.deposit_amount || 0}
-      deliveryCost={order.delivery_cost || 0} documentType={docType}
-      printOptions={{ documentType: docType, printVariant: "internal", language: "ar", includeProductionDetails: includeDetails, includePrices, includeCosts: false, includeSignatures: true, includeQrCode: false, includeStamp: false, includeLocation: false }}
-      onClose={onClose} />
-  );
-}
-
-/* ─── Main Page ─── */
-export default function OrderDetailPage() {
+export default function OrderDetailsPage() {
   const params = useParams();
-  const orderId = params?.id as string;
+  const orderId = params.id as string;
 
+  const [order, setOrder] = useState<UnifiedOrder | null>(null);
+  const [steps, setSteps] = useState<WorkflowStep[]>([]);
+  const [payments, setPayments] = useState<CarpenterPayment[]>([]);
+  const [reminders, setReminders] = useState<OrderReminder[]>([]);
+  const [delays, setDelays] = useState<DelayLog[]>([]);
+  const [invoices, setInvoices] = useState<InvoiceArchiveItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [order, setOrder] = useState<any>(null);
-  const [items, setItems] = useState<OrderItemUI[]>([]);
-  const [tasks, setTasks] = useState<ProductionTaskUI[]>([]);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [timeline, setTimeline] = useState<TimelineEvent[]>([]);
-  const [payments, setPayments] = useState<PaymentUI[]>([]);
-  const [activeTab, setActiveTab] = useState<"production" | "chat" | "media" | "timeline" | "financial">("production");
-  const [showPrint, setShowPrint] = useState(false);
-  
-  // ✅ NEW: Foam support states
-  const [isFoam, setIsFoam] = useState(false);
-  const [foamOrder, setFoamOrder] = useState<FoamOrder | null>(null);
-  const [foamSeddars, setFoamSeddars] = useState<FoamOrderSeddar[]>([]);
+  const [activeTab, setActiveTab] = useState<TabType>('info');
+  const [actionLoading, setActionLoading] = useState(false);
 
-  const loadData = async () => {
-    if (!orderId) return;
+  // Forms
+  const [newPayment, setNewPayment] = useState({ amount: '', date: '', notes: '' });
+  const [delayForm, setDelayForm] = useState({ newDate: '', reason: '', sendApology: true });
+  const [trackingUrl, setTrackingUrl] = useState('');
+
+  const loadAll = async () => {
     setLoading(true);
     try {
-      // ✅ FIX 1: Try orders table first
-      const { data: orderData, error: orderErr } = await supabase
-        .from("orders")
-        .select("*, order_items(*), production_tasks(*), order_history(*), payments(*)")
-        .eq("id", orderId)
-        .single();
-
-      if (orderData && !orderErr) {
-        setIsFoam(false);
-        setOrder(orderData);
-        setItems((orderData.order_items || []).map((it: any) => ({
-          id: it.id, productType: it.product_type, productName: it.product_name,
-          quantity: it.quantity, unitPrice: it.unit_price, totalPrice: it.total_price,
-          thumbnailUrl: it.thumbnail_url, details: it.details || {}, calculations: it.calculations || {}, lineNotes: it.line_notes,
-        })));
-        setTasks((orderData.production_tasks || []).map((t: any) => ({
-          id: t.id, productName: t.product_name, productType: t.product_type, status: t.status,
-          assignedToName: t.assigned_to_name, priority: t.priority, details: t.details, dueDate: t.due_date,
-        })));
-        setPayments((orderData.payments || []).map((p: any) => ({
-          id: p.id, amount: p.amount, method: p.method, type: p.type, date: p.date, notes: p.notes,
-        })));
-        setTimeline((orderData.order_history || []).map((h: any) => ({
-          id: h.id, date: new Date(h.created_at).toLocaleDateString("ar-MA", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }),
-          title: h.description || h.action, actor: h.created_by_name || "النظام", completed: true,
-        })));
-      } else {
-        // ✅ FIX 2: If not found in orders, try foam_orders
-        const { data: foamData, error: foamErr } = await supabase
-          .from("foam_orders")
-          .select("*, foam_products(name), suppliers(name)")
-          .eq("id", orderId)
-          .single();
-
-        if (foamData && !foamErr) {
-          setIsFoam(true);
-          setFoamOrder(foamData as FoamOrder);
-          
-          // Load foam seddars
-          const { data: seddarsData } = await supabase
-            .from("foam_order_seddars")
-            .select("*")
-            .eq("order_id", orderId)
-            .order("sort_order", { ascending: true });
-          setFoamSeddars(seddarsData || []);
-          
-          // Load messages (shared table)
-          const { data: msgs } = await supabase
-            .from("messages")
-            .select("*")
-            .eq("order_id", orderId)
-            .order("created_at", { ascending: true });
-          setMessages((msgs || []).map((m: any) => ({
-            id: m.id, sender: m.sender_role === "admin" ? "manager" : "tailor",
-            senderName: m.sender_name || "—", text: m.body || "",
-            time: new Date(m.created_at || "").toLocaleTimeString("ar-MA", { hour: "2-digit", minute: "2-digit" }),
-            type: m.attachment_url ? "image" : "text", imageUrl: m.attachment_url || undefined,
-          })));
-          
-          // Load payments (shared table)
-          const { data: payData } = await supabase
-            .from("payments")
-            .select("*")
-            .eq("order_id", orderId)
-            .order("created_at", { ascending: true });
-          setPayments((payData || []).map((p: any) => ({
-            id: p.id, amount: p.amount, method: p.method, type: p.type, date: p.date, notes: p.notes,
-          })));
-        } else {
-          setOrder(null);
-          setFoamOrder(null);
-        }
+      const [o, s, p, r, d, i] = await Promise.all([
+        fetchOrderById(orderId),
+        getTrackingSteps(orderId),
+        fetchCarpenterPayments(orderId),
+        fetchOrderReminders(orderId),
+        fetchDelayLogs(orderId),
+        fetchInvoiceArchive(orderId),
+      ]);
+      setOrder(o);
+      setSteps(s);
+      setPayments(p);
+      setReminders(r);
+      setDelays(d);
+      setInvoices(i);
+      if (o) {
+        const token = await getOrCreateTrackingToken(o.id);
+        setTrackingUrl(`${window.location.origin}/track/${token}`);
       }
     } catch (err) {
       console.error(err);
@@ -591,359 +71,499 @@ export default function OrderDetailPage() {
     }
   };
 
-  useEffect(() => {
-    loadData();
-  }, [orderId]);
+  useEffect(() => { loadAll(); }, [orderId]);
 
-  const handleConfirm = async () => {
-    if (!order) return;
-    await supabase.from("orders").update({ status: "confirmed", confirmed_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", order.id);
-    const { data: existingTasks } = await supabase.from("production_tasks").select("id").eq("order_id", order.id);
-    if (!existingTasks || existingTasks.length === 0) {
-      for (const item of items) {
-        await supabase.from("production_tasks").insert({
-          order_id: order.id, order_item_id: item.id, product_name: item.productName, product_type: item.productType,
-          status: "pending", priority: "normal", details: { fabric: item.details?.fabric, seddari: item.details?.seddari, dimensions: item.details?.dimensions, wood: item.details?.woodItems, foam: item.details?.foamSeddars, notes: item.lineNotes, images: item.details?.images || [] },
-          due_date: order.delivery_expected_date || null,
-        });
-      }
-    }
-    await supabase.from("order_history").insert({
-      order_id: order.id, status: "confirmed", action: "order_confirmed", description: "تم تأكيد الطلب وبدء الإنتاج",
-      created_by_name: "المدير", created_at: new Date().toISOString(),
-    });
-    loadData();
+  const handleStepStart = async (stepId: string) => {
+    setActionLoading(true);
+    await startWorkflowStep(stepId);
+    await loadAll();
+    setActionLoading(false);
   };
 
-  const handleStatusChange = async (newStatus: string) => {
-    if (!order) return;
-    await supabase.from("orders").update({ status: newStatus, updated_at: new Date().toISOString() }).eq("id", order.id);
-    await supabase.from("order_history").insert({
-      order_id: order.id, status: newStatus, action: "status_changed", description: `تم تغيير الحالة إلى ${statusLabels[newStatus] || newStatus}`,
-      created_by_name: "المدير", created_at: new Date().toISOString(),
+  const handleStepComplete = async (stepId: string) => {
+    setActionLoading(true);
+    await completeWorkflowStep(stepId, 'المدير');
+    await loadAll();
+    setActionLoading(false);
+  };
+
+  const handleAddPayment = async () => {
+    if (!newPayment.amount || !newPayment.date) return;
+    setActionLoading(true);
+    await addCarpenterPayment({
+      order_id: orderId,
+      amount: parseFloat(newPayment.amount),
+      payment_date: newPayment.date,
+      notes: newPayment.notes || null,
+      receipt_url: null,
+      created_by: 'المدير',
     });
-    loadData();
+    setNewPayment({ amount: '', date: '', notes: '' });
+    await loadAll();
+    setActionLoading(false);
+  };
+
+  const handleDeletePayment = async (id: string) => {
+    if (!confirm('هل أنت متأكد من حذف هذه الدفعة؟')) return;
+    setActionLoading(true);
+    await deleteCarpenterPayment(id);
+    await loadAll();
+    setActionLoading(false);
+  };
+
+  const handleDelaySubmit = async () => {
+    if (!delayForm.newDate) return;
+    setActionLoading(true);
+    await logDeliveryDelay({
+      order_id: orderId,
+      old_delivery_date: order?.delivery_date || null,
+      new_delivery_date: delayForm.newDate,
+      reason: delayForm.reason || null,
+      apology_message: delayForm.sendApology ? `نعتذر عن التأخير، موعد التسليم الجديد: ${delayForm.newDate}` : null,
+      apology_sent: false,
+      sent_at: null,
+      created_by: 'المدير',
+    });
+    setDelayForm({ newDate: '', reason: '', sendApology: true });
+    await loadAll();
+    setActionLoading(false);
+  };
+
+  const handleArchive = async () => {
+    if (!confirm('أرشفة الطلبية؟')) return;
+    setActionLoading(true);
+    await archiveOrder(orderId, 'المدير');
+    await loadAll();
+    setActionLoading(false);
+  };
+
+  const copyTracking = () => {
+    navigator.clipboard.writeText(trackingUrl);
+    alert('تم النسخ!');
   };
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center" dir="rtl">
-        <div className="text-[#1B5E38] font-bold animate-pulse">جاري تحميل بيانات الطلبية...</div>
-      </div>
-    );
-  }
-
-  if (!order && !foamOrder) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center" dir="rtl">
+      <div className="min-h-screen bg-[#F0EDE8] flex items-center justify-center" dir="rtl">
         <div className="text-center">
-          <p className="text-4xl mb-4">❌</p>
-          <p className="text-gray-500">الطلبية غير موجودة</p>
-          <Link href="/admin/orders" className="text-[#1B5E38] underline mt-4 inline-block">العودة للقائمة</Link>
+          <div className="w-12 h-12 border-4 border-[#1B5E38] border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-gray-500">جاري التحميل...</p>
         </div>
       </div>
     );
   }
 
-  /* ═══════════════════════════════════════════════════════════════
-     ✅ NEW: Foam Order Detail View
-     ═══════════════════════════════════════════════════════════════ */
-  if (isFoam && foamOrder) {
-    const daysLeft = getDaysLeft(foamOrder.delivery_date);
-    
+  if (!order) {
     return (
-      <div className="min-h-screen bg-gray-50" dir="rtl">
-        <div className="bg-white border-b border-gray-200">
-          <div className="max-w-7xl mx-auto px-4 py-6">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="min-h-screen bg-[#F0EDE8] flex items-center justify-center" dir="rtl">
+        <div className="text-center">
+          <AlertTriangle className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+          <p className="text-gray-500 text-lg font-bold">الطلبية غير موجودة</p>
+          <Link href="/admin/orders" className="text-[#1B5E38] font-bold mt-4 inline-block hover:underline">
+            العودة للطلبيات
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  const daysLeft = getDaysLeft(order.delivery_date);
+  const priority = getPriorityLevel(daysLeft);
+  const carpenterRemaining = getCarpenterRemaining(order);
+
+  const tabs: { key: TabType; label: string; icon: any }[] = [
+    { key: 'info', label: 'المعلومات', icon: Package },
+    { key: 'workflow', label: 'مسار العمل', icon: Scissors },
+    { key: 'payments', label: 'الأقساط', icon: DollarSign },
+    { key: 'reminders', label: 'التذكيرات', icon: Bell },
+    { key: 'delays', label: 'التأجيلات', icon: Clock },
+    { key: 'invoices', label: 'الفواتير', icon: FileText },
+  ];
+
+  return (
+    <div className="min-h-screen bg-[#F0EDE8]" dir="rtl">
+      <header className="bg-white border-b border-[#E8E4DC]">
+        <div className="max-w-5xl mx-auto px-4 py-4">
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div className="flex items-center gap-3">
+              <Link href="/admin/orders" className="p-2 rounded-xl bg-[#F5F0E8] hover:bg-[#E8E4DC] transition">
+                <ArrowRight className="w-5 h-5 text-gray-600" />
+              </Link>
               <div>
-                <div className="flex items-center gap-3 mb-2">
-                  <h1 className="text-2xl font-bold text-gray-900">FOAM-{foamOrder.order_number}</h1>
-                  <span className={`px-3 py-1 rounded-full text-xs font-bold text-white ${
-                    foamOrder.status === 'cancelled' ? 'bg-red-500' :
-                    foamOrder.status === 'delivered' ? 'bg-emerald-600' :
-                    foamOrder.status === 'ready' ? 'bg-green-500' :
-                    'bg-blue-500'
-                  }`}>
-                    {statusLabels[foamOrder.status] || foamOrder.status}
+                <div className="flex items-center gap-2">
+                  <h1 className="text-xl font-bold text-gray-800">{order.order_number}</h1>
+                  <span className={`px-2.5 py-0.5 rounded-lg text-xs font-bold ${priority.bg} ${priority.color}`}>
+                    {priority.label}
                   </span>
                 </div>
-                <p className="text-sm text-gray-500">
-                  أنشئ: {foamOrder.created_at ? new Date(foamOrder.created_at).toLocaleString("ar-MA") : "—"}
-                  {foamOrder.suppliers?.name && ` · المورد: ${foamOrder.suppliers.name}`}
-                </p>
-              </div>
-              <div className="flex gap-2 flex-wrap">
-                <Link href="/admin/orders" className="px-4 py-2 bg-gray-100 text-gray-700 rounded-xl text-sm font-bold hover:bg-gray-200 transition">← رجوع</Link>
+                <p className="text-sm text-gray-500">{getProductLabel(order.product_type)} • {getWorkflowStatusLabel(order.workflow_status)}</p>
               </div>
             </div>
-
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
-              <div className="bg-gray-50 rounded-xl p-4">
-                <p className="text-xs text-gray-500 mb-1">👤 الزبون</p>
-                <p className="font-bold text-gray-800">{foamOrder.customer_name || "—"}</p>
-                <p className="text-xs text-gray-500">{foamOrder.customer_phone || "—"}</p>
-              </div>
-              <div className="bg-gray-50 rounded-xl p-4">
-                <p className="text-xs text-gray-500 mb-1">🧽 المنتج</p>
-                <p className="font-bold text-gray-800">{foamOrder.foam_products?.name || foamOrder.product_name || "—"}</p>
-                <p className="text-xs text-gray-500">{foamOrder.height_cm}سم × {foamOrder.width_cm}سم</p>
-              </div>
-              <div className="bg-gray-50 rounded-xl p-4">
-                <p className="text-xs text-gray-500 mb-1">💰 المبلغ</p>
-                <p className="font-bold text-gray-800">{formatCurrency(foamOrder.final_total || 0)}</p>
-                <p className="text-xs text-gray-500">تسبيق: {formatCurrency(foamOrder.deposit_amount || 0)} · باقي: {formatCurrency(foamOrder.remaining_amount || 0)}</p>
-              </div>
-              <div className="bg-gray-50 rounded-xl p-4">
-                <p className="text-xs text-gray-500 mb-1">📅 التسليم</p>
-                <p className="font-bold text-gray-800">{foamOrder.delivery_date ? new Date(foamOrder.delivery_date).toLocaleDateString("ar-MA") : "—"}</p>
-                <p className={`text-xs ${daysLeft < 0 ? "text-red-500" : daysLeft <= 2 ? "text-amber-600" : "text-green-600"}`}>
-                  {daysLeft < 0 ? `متأخر ${Math.abs(daysLeft)} يوم` : `متبقي ${daysLeft} أيام`}
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-6 bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-              <h3 className="text-lg font-bold text-gray-800 mb-4">🧽 تفاصيل طلب البونج</h3>
-              
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm mb-4">
-                <div className="p-3 bg-gray-50 rounded-lg">
-                  <span className="text-gray-500 block text-xs mb-1">السعر للمتر</span>
-                  <span className="font-bold text-[#1B5E38]">{foamOrder.price_per_meter?.toLocaleString()} درهم</span>
-                </div>
-                <div className="p-3 bg-gray-50 rounded-lg">
-                  <span className="text-gray-500 block text-xs mb-1">إجمالي الطول</span>
-                  <span className="font-bold text-[#1B5E38]">{foamOrder.total_length_meters} م</span>
-                </div>
-                <div className="p-3 bg-gray-50 rounded-lg">
-                  <span className="text-gray-500 block text-xs mb-1">مجموع السدادر</span>
-                  <span className="font-bold text-[#1B5E38]">{foamOrder.seddars_total?.toLocaleString()} درهم</span>
-                </div>
-                <div className="p-3 bg-gray-50 rounded-lg">
-                  <span className="text-gray-500 block text-xs mb-1">زوايا مربعة</span>
-                  <span className="font-bold">{foamOrder.square_corners_count} قطعة</span>
-                  <span className="text-xs text-gray-500 block">({foamOrder.square_corners_total?.toLocaleString()} درهم)</span>
-                </div>
-                <div className="p-3 bg-gray-50 rounded-lg">
-                  <span className="text-gray-500 block text-xs mb-1">زوايا مثلثة</span>
-                  <span className="font-bold">{foamOrder.triangle_corners_count} قطعة</span>
-                  <span className="text-xs text-gray-500 block">({foamOrder.triangle_corners_total?.toLocaleString()} درهم)</span>
-                </div>
-                <div className="p-3 bg-gray-50 rounded-lg">
-                  <span className="text-gray-500 block text-xs mb-1">المجموع الفرعي</span>
-                  <span className="font-bold">{foamOrder.subtotal?.toLocaleString()} درهم</span>
-                </div>
-              </div>
-
-              {foamOrder.price_adjustment_value > 0 && (
-                <div className="mb-4 p-3 bg-amber-50 rounded-lg border border-amber-200">
-                  <p className="text-sm font-bold text-amber-800">
-                    ⚡ تعديل السعر: {foamOrder.price_adjustment_type === 'discount' ? 'خصم' : 'زيادة'} 
-                    {' '}{foamOrder.price_adjustment_value?.toLocaleString()} درهم
-                  </p>
-                  {foamOrder.price_adjustment_reason && (
-                    <p className="text-xs text-amber-600 mt-1">السبب: {foamOrder.price_adjustment_reason}</p>
-                  )}
-                </div>
-              )}
-
-              {foamSeddars.length > 0 && (
-                <div className="mb-4">
-                  <h4 className="font-bold text-gray-700 mb-2 text-sm">📏 السدادر ({foamSeddars.length})</h4>
-                  <div className="flex flex-wrap gap-2">
-                    {foamSeddars.map((s, i) => (
-                      <span key={s.id} className="px-3 py-2 bg-[#F5F0E8] rounded-lg text-sm border border-[#E8E4DC] font-bold text-[#1B5E38]">
-                        سداري #{i+1}: {s.length_meters} م
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {foamOrder.notes && (
-                <div className="p-3 bg-blue-50 rounded-lg border border-blue-100">
-                  <p className="text-sm text-blue-800">📝 {foamOrder.notes}</p>
-                </div>
-              )}
-            </div>
-
-            <div className="mt-4 flex flex-wrap gap-2">
-              {["pending", "sent_to_supplier", "in_production", "ready", "delivered", "cancelled"].map((s) => (
-                <button
-                  key={s}
-                  onClick={async () => {
-                    await supabase.from("foam_orders").update({ status: s, updated_at: new Date().toISOString() }).eq("id", foamOrder.id);
-                    loadData();
-                  }}
-                  className={`px-4 py-2 rounded-xl text-xs font-bold transition ${
-                    foamOrder.status === s ? "bg-[#1B5E38] text-white" : "bg-white border border-gray-200 text-gray-600 hover:bg-gray-50"
-                  }`}
-                >
-                  {s === 'pending' ? '⏳ معلق' :
-                   s === 'sent_to_supplier' ? '📤 مرسل للمورد' :
-                   s === 'in_production' ? '⚙️ قيد الإنتاج' :
-                   s === 'ready' ? '✅ جاهز' :
-                   s === 'delivered' ? '🚚 مُسلّم' : '❌ ملغى'}
-                </button>
-              ))}
+            <div className="flex items-center gap-2">
+              <button onClick={copyTracking} className="px-3 py-2 rounded-xl bg-blue-50 text-blue-700 text-sm font-bold flex items-center gap-2 hover:bg-blue-100 transition">
+                <ClipboardCopy className="w-4 h-4" />
+                رابط التتبع
+              </button>
+              <button onClick={handleArchive} disabled={actionLoading} className="px-3 py-2 rounded-xl bg-red-50 text-red-700 text-sm font-bold flex items-center gap-2 hover:bg-red-100 transition disabled:opacity-50">
+                <Archive className="w-4 h-4" />
+                أرشفة
+              </button>
             </div>
           </div>
         </div>
+      </header>
 
-        <div className="max-w-7xl mx-auto px-4 py-6">
-          <div className="flex gap-1 bg-white p-1 rounded-xl border border-gray-200 mb-6 overflow-x-auto">
-            {[
-              { key: "chat", label: "💬 المحادثة" },
-              { key: "financial", label: "💰 المالية" },
-            ].map((tab) => (
+      <main className="max-w-5xl mx-auto px-4 py-6 space-y-6">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="bg-white rounded-2xl p-5 border border-[#E8E4DC]">
+            <p className="text-xs font-bold text-gray-400 mb-1">الزبون</p>
+            <p className="font-bold text-gray-800 flex items-center gap-2"><User className="w-4 h-4 text-gray-400" /> {order.customer_name || '—'}</p>
+          </div>
+          <div className="bg-white rounded-2xl p-5 border border-[#E8E4DC]">
+            <p className="text-xs font-bold text-gray-400 mb-1">الهاتف</p>
+            <p className="font-bold text-gray-800 flex items-center gap-2" dir="ltr"><Phone className="w-4 h-4 text-gray-400" /> {order.customer_phone || '—'}</p>
+          </div>
+          <div className="bg-white rounded-2xl p-5 border border-[#E8E4DC]">
+            <p className="text-xs font-bold text-gray-400 mb-1">موعد التسليم</p>
+            <p className="font-bold text-gray-800 flex items-center gap-2"><Calendar className="w-4 h-4 text-gray-400" /> {order.delivery_date || '—'} <span className="text-xs text-gray-400">({daysLeft >= 0 ? `${daysLeft} يوم` : `${Math.abs(daysLeft)} يوم متأخر`})</span></p>
+          </div>
+          <div className="bg-white rounded-2xl p-5 border border-[#E8E4DC]">
+            <p className="text-xs font-bold text-gray-400 mb-1">المبلغ الإجمالي</p>
+            <p className="font-bold text-[#1B5E38] text-lg">{formatCurrency(order.total_amount)}</p>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-2xl border border-[#E8E4DC] overflow-hidden">
+          <div className="flex overflow-x-auto border-b border-[#E8E4DC]">
+            {tabs.map(tab => (
               <button
                 key={tab.key}
-                onClick={() => setActiveTab(tab.key as typeof activeTab)}
-                className={`flex-1 px-4 py-2.5 rounded-lg text-sm font-bold whitespace-nowrap transition ${
-                  activeTab === tab.key ? "bg-[#1B5E38] text-white" : "text-gray-600 hover:bg-gray-50"
+                onClick={() => setActiveTab(tab.key)}
+                className={`px-5 py-3 text-sm font-bold flex items-center gap-2 whitespace-nowrap transition border-b-2 ${
+                  activeTab === tab.key
+                    ? 'border-[#1B5E38] text-[#1B5E38] bg-[#F5F0E8]'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
                 }`}
               >
+                <tab.icon className="w-4 h-4" />
                 {tab.label}
               </button>
             ))}
           </div>
 
-          {activeTab === "chat" && <ChatTab orderId={foamOrder.id} initialMessages={messages} />}
-          {activeTab === "financial" && (
-            <div className="space-y-6">
-              <div className="bg-white rounded-2xl border-2 border-[#C9A84C] overflow-hidden">
-                <div className="p-4 bg-[#C9A84C]/10"><h3 className="font-bold text-lg flex items-center gap-2">💰 الملخص المالي</h3></div>
-                <div className="p-4 space-y-2 text-sm">
-                  <div className="flex justify-between"><span className="text-gray-600">المجموع الفرعي</span><span className="font-bold">{formatCurrency(foamOrder.subtotal || 0)}</span></div>
-                  {foamOrder.price_adjustment_value > 0 && (
-                    <div className="flex justify-between text-amber-600">
-                      <span>تعديل السعر</span>
-                      <span className="font-bold">{foamOrder.price_adjustment_type === 'discount' ? '-' : '+'}{formatCurrency(foamOrder.price_adjustment_value)}</span>
+          <div className="p-6">
+            {activeTab === 'info' && (
+              <div className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-4">
+                    <h3 className="font-bold text-gray-800 flex items-center gap-2"><Package className="w-5 h-5 text-[#1B5E38]" /> معلومات الطلبية</h3>
+                    <div className="bg-[#FAFAF8] rounded-xl p-4 space-y-3 text-sm">
+                      <div className="flex justify-between"><span className="text-gray-500">رقم الطلبية</span><span className="font-bold">{order.order_number}</span></div>
+                      <div className="flex justify-between"><span className="text-gray-500">نوع المنتج</span><span className="font-bold">{getProductLabel(order.product_type)}</span></div>
+                      <div className="flex justify-between"><span className="text-gray-500">الحالة الحالية</span><span className="font-bold">{getWorkflowStatusLabel(order.workflow_status)}</span></div>
+                      <div className="flex justify-between"><span className="text-gray-500">المدينة</span><span className="font-bold">{order.customer_city || '—'}</span></div>
+                      <div className="flex justify-between"><span className="text-gray-500">ملاحظات</span><span className="font-bold">{order.notes || '—'}</span></div>
                     </div>
-                  )}
-                  <div className="flex justify-between text-lg font-bold pt-2 border-t"><span>الإجمالي</span><span className="text-[#C9A84C]">{formatCurrency(foamOrder.final_total || 0)}</span></div>
-                  <div className="flex justify-between text-sm"><span className="text-gray-500">التسبيق</span><span className="font-bold">{formatCurrency(foamOrder.deposit_amount || 0)}</span></div>
-                  <div className="flex justify-between text-sm font-bold"><span className="text-gray-500">الباقي</span><span>{formatCurrency(foamOrder.remaining_amount || 0)}</span></div>
+                  </div>
+                  <div className="space-y-4">
+                    <h3 className="font-bold text-gray-800 flex items-center gap-2"><DollarSign className="w-5 h-5 text-[#1B5E38]" /> المعلومات المالية</h3>
+                    <div className="bg-[#FAFAF8] rounded-xl p-4 space-y-3 text-sm">
+                      <div className="flex justify-between"><span className="text-gray-500">المبلغ الإجمالي</span><span className="font-bold text-[#1B5E38]">{formatCurrency(order.total_amount)}</span></div>
+                      <div className="flex justify-between"><span className="text-gray-500">التسبيق</span><span className="font-bold text-blue-600">{formatCurrency(order.deposit_amount)}</span></div>
+                      <div className="flex justify-between"><span className="text-gray-500">المبلغ المتبقي</span><span className="font-bold text-red-600">{formatCurrency(order.remaining_amount)}</span></div>
+                      {order.product_type === 'wood' && (
+                        <div className="flex justify-between border-t border-gray-200 pt-2 mt-2"><span className="text-gray-500">مدفوع للنجار</span><span className="font-bold text-amber-600">{formatCurrency(order.total_carpenter_paid)}</span></div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {order.payload && (
+                  <div className="space-y-4">
+                    <h3 className="font-bold text-gray-800 flex items-center gap-2"><FileText className="w-5 h-5 text-[#1B5E38]" /> التفاصيل التقنية</h3>
+                    <div className="bg-[#FAFAF8] rounded-xl p-4">
+                      <pre className="text-xs text-gray-600 overflow-x-auto whitespace-pre-wrap">{JSON.stringify(order.payload, null, 2)}</pre>
+                    </div>
+                  </div>
+                )}
+
+                {order.tailor_name && (
+                  <div className="bg-indigo-50 rounded-xl p-4 border border-indigo-100">
+                    <h3 className="font-bold text-indigo-800 flex items-center gap-2 mb-2"><Scissors className="w-5 h-5" /> معلومات الخياط</h3>
+                    <p className="text-sm text-indigo-700">الاسم: <span className="font-bold">{order.tailor_name}</span></p>
+                    <p className="text-sm text-indigo-700">الهاتف: <span className="font-bold" dir="ltr">{order.tailor_phone || '—'}</span></p>
+                  </div>
+                )}
+
+                {order.company_name && (
+                  <div className="bg-orange-50 rounded-xl p-4 border border-orange-100">
+                    <h3 className="font-bold text-orange-800 flex items-center gap-2 mb-2"><MessageSquare className="w-5 h-5" /> جهة الاتصال (الشركة)</h3>
+                    <p className="text-sm text-orange-700">الشركة: <span className="font-bold">{order.company_name}</span></p>
+                    <p className="text-sm text-orange-700">الهاتف: <span className="font-bold" dir="ltr">{order.company_phone || '—'}</span></p>
+                    {order.company_whatsapp && (
+                      <a href={`https://wa.me/${order.company_whatsapp.replace(/\D/g,'')}`} target="_blank" className="inline-flex items-center gap-1 mt-2 text-sm text-green-600 font-bold hover:underline">
+                        <MessageSquare className="w-4 h-4" /> واتساب
+                      </a>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {activeTab === 'workflow' && (
+              <div className="space-y-4">
+                <h3 className="font-bold text-gray-800 flex items-center gap-2"><Scissors className="w-5 h-5 text-[#1B5E38]" /> مسار العمل</h3>
+                <div className="space-y-3">
+                  {steps.map((step, idx) => (
+                    <div key={step.id} className={`flex items-center gap-4 p-4 rounded-xl border ${
+                      step.status === 'completed' ? 'bg-green-50 border-green-200' :
+                      step.status === 'in_progress' ? 'bg-amber-50 border-amber-200' :
+                      'bg-white border-gray-200'
+                    }`}>
+                      <div className={`w-10 h-10 rounded-full flex items-center justify-center text-lg flex-shrink-0 ${
+                        step.status === 'completed' ? 'bg-green-500 text-white' :
+                        step.status === 'in_progress' ? 'bg-amber-500 text-white' :
+                        'bg-gray-200 text-gray-500'
+                      }`}>
+                        {step.status === 'completed' ? <CheckCircle className="w-5 h-5" /> : step.step_icon || idx + 1}
+                      </div>
+                      <div className="flex-1">
+                        <p className="font-bold text-sm">{step.step_label}</p>
+                        <p className="text-xs text-gray-500">
+                          {step.status === 'completed' ? `تم الإنجاز: ${step.completed_at?.split('T')[0] || ''}` :
+                           step.status === 'in_progress' ? 'قيد التنفيذ...' : 'في الانتظار'}
+                        </p>
+                        {step.notes && <p className="text-xs text-gray-400 mt-1">{step.notes}</p>}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {step.status === 'pending' && (
+                          <button
+                            onClick={() => handleStepStart(step.id)}
+                            disabled={actionLoading}
+                            className="px-3 py-1.5 rounded-lg bg-amber-500 text-white text-xs font-bold hover:bg-amber-600 transition disabled:opacity-50"
+                          >
+                            بدأ
+                          </button>
+                        )}
+                        {step.status === 'in_progress' && (
+                          <button
+                            onClick={() => handleStepComplete(step.id)}
+                            disabled={actionLoading}
+                            className="px-3 py-1.5 rounded-lg bg-green-500 text-white text-xs font-bold hover:bg-green-600 transition disabled:opacity-50"
+                          >
+                            إتمام
+                          </button>
+                        )}
+                        {step.status === 'completed' && (
+                          <CheckCircle className="w-5 h-5 text-green-500" />
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {steps.length === 0 && <p className="text-gray-400 text-center py-8">لا توجد خطوات مسار عمل لهذا المنتج</p>}
+              </div>
+            )}
+
+            {activeTab === 'payments' && order.product_type === 'wood' && (
+              <div className="space-y-6">
+                <h3 className="font-bold text-gray-800 flex items-center gap-2"><DollarSign className="w-5 h-5 text-[#1B5E38]" /> أقساط النجار</h3>
+                <div className="bg-amber-50 rounded-xl p-4 border border-amber-100 flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-amber-700">المبلغ الإجمالي</p>
+                    <p className="text-xl font-bold text-amber-800">{formatCurrency(order.total_amount)}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-amber-700">المدفوع</p>
+                    <p className="text-xl font-bold text-green-600">{formatCurrency(order.total_carpenter_paid || 0)}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-amber-700">المتبقي</p>
+                    <p className="text-xl font-bold text-red-600">{formatCurrency(carpenterRemaining)}</p>
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-xl border border-gray-200 p-4">
+                  <h4 className="text-sm font-bold text-gray-700 mb-3">إضافة دفعة جديدة</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <input
+                      type="number"
+                      placeholder="المبلغ (DH)"
+                      value={newPayment.amount}
+                      onChange={e => setNewPayment(p => ({ ...p, amount: e.target.value }))}
+                      className="px-3 py-2 rounded-lg border border-gray-200 text-sm focus:ring-2 focus:ring-[#1B5E38] outline-none"
+                    />
+                    <input
+                      type="date"
+                      value={newPayment.date}
+                      onChange={e => setNewPayment(p => ({ ...p, date: e.target.value }))}
+                      className="px-3 py-2 rounded-lg border border-gray-200 text-sm focus:ring-2 focus:ring-[#1B5E38] outline-none"
+                    />
+                    <input
+                      type="text"
+                      placeholder="ملاحظات (اختياري)"
+                      value={newPayment.notes}
+                      onChange={e => setNewPayment(p => ({ ...p, notes: e.target.value }))}
+                      className="px-3 py-2 rounded-lg border border-gray-200 text-sm focus:ring-2 focus:ring-[#1B5E38] outline-none"
+                    />
+                  </div>
+                  <button
+                    onClick={handleAddPayment}
+                    disabled={actionLoading || !newPayment.amount || !newPayment.date}
+                    className="mt-3 px-4 py-2 rounded-lg bg-[#1B5E38] text-white text-sm font-bold flex items-center gap-2 hover:bg-[#144d2e] transition disabled:opacity-50"
+                  >
+                    <Plus className="w-4 h-4" />
+                    إضافة الدفعة
+                  </button>
+                </div>
+
+                <div className="space-y-2">
+                  {payments.map(p => (
+                    <div key={p.id} className="flex items-center justify-between p-4 bg-white rounded-xl border border-gray-100">
+                      <div>
+                        <p className="font-bold text-gray-800">{formatCurrency(p.amount)}</p>
+                        <p className="text-xs text-gray-500">{p.payment_date} {p.notes && `• ${p.notes}`}</p>
+                      </div>
+                      <button
+                        onClick={() => handleDeletePayment(p.id)}
+                        className="p-2 rounded-lg text-red-500 hover:bg-red-50 transition"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                  {payments.length === 0 && <p className="text-gray-400 text-center py-8">لا توجد دفعات مسجلة</p>}
                 </div>
               </div>
-              <FinancialTab order={{
-                id: foamOrder.id, total_amount: foamOrder.final_total, deposit_amount: foamOrder.deposit_amount,
-                remaining_amount: foamOrder.remaining_amount, subtotal: foamOrder.subtotal,
-                discount_amount: foamOrder.price_adjustment_type === 'discount' ? foamOrder.price_adjustment_value : 0,
-                delivery_cost: 0, status: foamOrder.status,
-              }} payments={payments} />
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  }
+            )}
 
-  /* ═══════════════════════════════════════════════════════════════
-     Regular Order View (your existing code, unchanged)
-     ═══════════════════════════════════════════════════════════════ */
-  const daysLeft = getDaysLeft(order.delivery_expected_date);
-  const hasTapis = items.some((i) => i.productType === "tapis");
-
-  let images: string[] = [];
-  let notesArr: string[] = [];
-  items.forEach((item) => { if (item.details?.images) images = [...images, ...item.details.images]; });
-  if (order.production_notes) notesArr = order.production_notes.split("\n").filter(Boolean);
-
-  return (
-    <div className="min-h-screen bg-gray-50" dir="rtl">
-      <div className="bg-white border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 py-6">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div>
-              <div className="flex items-center gap-3 mb-2">
-                <h1 className="text-2xl font-bold text-gray-900">{order.order_number}</h1>
-                <span className={`px-3 py-1 rounded-full text-xs font-bold text-white ${statusColors[order.status] || "bg-gray-500"}`}>
-                  {statusLabels[order.status] || order.status}
-                </span>
-                {hasTapis && <span className="px-3 py-1 rounded-full text-xs font-bold bg-blue-100 text-blue-700">🧶 زربية</span>}
+            {activeTab === 'payments' && order.product_type !== 'wood' && (
+              <div className="text-center py-12">
+                <DollarSign className="w-16 h-16 text-gray-200 mx-auto mb-4" />
+                <p className="text-gray-500">نظام الأقساط متاح فقط لطلبيات العود</p>
               </div>
-              <p className="text-sm text-gray-500">أنشئ: {new Date(order.created_at).toLocaleString("ar-MA")} · البائع: {order.seller_id || "—"}</p>
-            </div>
-            <div className="flex gap-2 flex-wrap">
-              <Link href="/admin/orders" className="px-4 py-2 bg-gray-100 text-gray-700 rounded-xl text-sm font-bold hover:bg-gray-200 transition">← رجوع</Link>
-              <button onClick={() => setShowPrint(true)} className="px-4 py-2 bg-[#C9A84C] text-white rounded-xl text-sm font-bold hover:bg-[#b8983f] transition">🖨️ طباعة / مستندات</button>
-              {order.status === "draft" && (
-                <button onClick={handleConfirm} className="px-4 py-2 bg-[#1B5E38] text-white rounded-xl text-sm font-bold hover:bg-[#14502d] transition">✅ تأكيد الطلب</button>
-              )}
-            </div>
-          </div>
+            )}
 
-          {order.status !== "draft" && order.status !== "cancelled" && (
-            <div className="mt-4 flex flex-wrap gap-2">
-              {["confirmed", "production", "tailor_working", "quality_check", "ready", "delivered", "paid"].map((s) => (
-                <button key={s} onClick={() => handleStatusChange(s)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${order.status === s ? "bg-[#1B5E38] text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}>
-                  {statusLabels[s]}
-                </button>
-              ))}
-            </div>
-          )}
-
-          {hasTapis && order.status !== "delivered" && order.status !== "paid" && (
-            <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-xl flex items-start gap-3">
-              <span className="text-2xl">📞</span>
-              <div className="flex-1">
-                <p className="font-bold text-blue-800 text-sm">تذكير: اتصال بشركة الزرابي</p>
-                <p className="text-xs text-blue-600 mt-1">هذه الطلبية تحتوي على زربية. يجب الاتصال بالشركة قبل {daysLeft} أيام من التسليم.</p>
+            {activeTab === 'reminders' && (
+              <div className="space-y-4">
+                <h3 className="font-bold text-gray-800 flex items-center gap-2"><Bell className="w-5 h-5 text-[#1B5E38]" /> التذكيرات</h3>
+                <div className="space-y-2">
+                  {reminders.map(r => (
+                    <div key={r.id} className={`p-4 rounded-xl border-r-4 ${
+                      r.priority === 'urgent' ? 'bg-red-50 border-red-500' :
+                      r.priority === 'high' ? 'bg-orange-50 border-orange-500' :
+                      'bg-blue-50 border-blue-500'
+                    }`}>
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="font-bold text-sm">{r.title}</p>
+                          <p className="text-xs text-gray-500 mt-1">{r.description}</p>
+                          <p className="text-xs text-gray-400 mt-1">تاريخ التذكير: {r.trigger_date}</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {r.is_triggered ? (
+                            <span className="px-2 py-1 rounded-lg bg-green-100 text-green-700 text-xs font-bold">تم</span>
+                          ) : r.is_dismissed ? (
+                            <span className="px-2 py-1 rounded-lg bg-gray-100 text-gray-500 text-xs font-bold">تم التجاهل</span>
+                          ) : (
+                            <span className="px-2 py-1 rounded-lg bg-amber-100 text-amber-700 text-xs font-bold">معلق</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  {reminders.length === 0 && <p className="text-gray-400 text-center py-8">لا توجد تذكيرات</p>}
+                </div>
               </div>
-            </div>
-          )}
+            )}
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
-            <div className="bg-gray-50 rounded-xl p-4">
-              <p className="text-xs text-gray-500 mb-1">👤 الزبون</p>
-              <p className="font-bold text-gray-800">{order.customer_name || "—"}</p>
-              <p className="text-xs text-gray-500">{order.customer_phone || "—"}</p>
-            </div>
-            <div className="bg-gray-50 rounded-xl p-4">
-              <p className="text-xs text-gray-500 mb-1">💰 المبلغ</p>
-              <p className="font-bold text-gray-800">{formatCurrency(order.total_amount || 0)}</p>
-              <p className="text-xs text-gray-500">تسبيق: {formatCurrency(order.deposit_amount || 0)}</p>
-            </div>
-            <div className="bg-gray-50 rounded-xl p-4">
-              <p className="text-xs text-gray-500 mb-1">📅 التسليم</p>
-              <p className="font-bold text-gray-800">{order.delivery_expected_date ? new Date(order.delivery_expected_date).toLocaleDateString("ar-MA") : "—"}</p>
-              <p className={`text-xs ${daysLeft < 0 ? "text-red-500" : "text-green-600"}`}>{daysLeft < 0 ? `متأخر ${Math.abs(daysLeft)} يوم` : `متبقي ${daysLeft} أيام`}</p>
-            </div>
-            <div className="bg-gray-50 rounded-xl p-4">
-              <p className="text-xs text-gray-500 mb-1">📦 المنتجات</p>
-              <p className="font-bold text-gray-800">{items.length} منتجات</p>
-              <p className="text-xs text-[#1B5E38]">{tasks.filter((t) => t.status === "completed").length}/{tasks.length} مهام مكتملة</p>
-            </div>
+            {activeTab === 'delays' && (
+              <div className="space-y-6">
+                <h3 className="font-bold text-gray-800 flex items-center gap-2"><Clock className="w-5 h-5 text-[#1B5E38]" /> تأجيل موعد التسليم</h3>
+                <div className="bg-white rounded-xl border border-gray-200 p-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                    <div>
+                      <label className="block text-xs font-bold text-gray-500 mb-1">موعد التسليم الجديد</label>
+                      <input
+                        type="date"
+                        value={delayForm.newDate}
+                        onChange={e => setDelayForm(f => ({ ...f, newDate: e.target.value }))}
+                        className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:ring-2 focus:ring-[#1B5E38] outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-gray-500 mb-1">السبب (اختياري)</label>
+                      <input
+                        type="text"
+                        placeholder="سبب التأجيل..."
+                        value={delayForm.reason}
+                        onChange={e => setDelayForm(f => ({ ...f, reason: e.target.value }))}
+                        className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:ring-2 focus:ring-[#1B5E38] outline-none"
+                      />
+                    </div>
+                  </div>
+                  <label className="flex items-center gap-2 text-sm text-gray-600 mb-3">
+                    <input
+                      type="checkbox"
+                      checked={delayForm.sendApology}
+                      onChange={e => setDelayForm(f => ({ ...f, sendApology: e.target.checked }))}
+                      className="w-4 h-4 rounded border-gray-300 text-[#1B5E38] focus:ring-[#1B5E38]"
+                    />
+                    إرسال رسالة اعتذار للزبون
+                  </label>
+                  <button
+                    onClick={handleDelaySubmit}
+                    disabled={actionLoading || !delayForm.newDate}
+                    className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-bold flex items-center gap-2 hover:bg-red-700 transition disabled:opacity-50"
+                  >
+                    <Send className="w-4 h-4" />
+                    تأجيل وإرسال اعتذار
+                  </button>
+                </div>
+
+                <div className="space-y-2">
+                  <h4 className="text-sm font-bold text-gray-700">سجل التأجيلات</h4>
+                  {delays.map(d => (
+                    <div key={d.id} className="p-4 bg-white rounded-xl border border-gray-100">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-bold text-gray-800">
+                            {d.old_delivery_date || '—'} → <span className="text-red-600">{d.new_delivery_date}</span>
+                          </p>
+                          {d.reason && <p className="text-xs text-gray-500 mt-1">السبب: {d.reason}</p>}
+                        </div>
+                        <span className="text-xs text-gray-400">{d.created_at?.split('T')[0]}</span>
+                      </div>
+                    </div>
+                  ))}
+                  {delays.length === 0 && <p className="text-gray-400 text-center py-4">لا توجد تأجيلات مسجلة</p>}
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'invoices' && (
+              <div className="space-y-4">
+                <h3 className="font-bold text-gray-800 flex items-center gap-2"><FileText className="w-5 h-5 text-[#1B5E38]" /> أرشيف الفواتير</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {invoices.map(inv => (
+                    <div key={inv.id} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                      {inv.invoice_image_url && (
+                        <img src={inv.invoice_image_url} alt="فاتورة" className="w-full h-48 object-cover" />
+                      )}
+                      <div className="p-4">
+                        <p className="font-bold text-sm">{inv.invoice_number || 'فاتورة بدون رقم'}</p>
+                        <p className="text-xs text-gray-500 mt-1">{inv.supplier_name || '—'} • {formatCurrency(inv.amount)}</p>
+                        <p className="text-xs text-gray-400 mt-1">{inv.invoice_date || '—'}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {invoices.length === 0 && <p className="text-gray-400 text-center py-8">لا توجد فواتير مسجلة</p>}
+              </div>
+            )}
           </div>
         </div>
-      </div>
-
-      <div className="max-w-7xl mx-auto px-4 py-6">
-        <div className="flex gap-1 bg-white p-1 rounded-xl border border-gray-200 mb-6 overflow-x-auto">
-          {[
-            { key: "production", label: "📦 الإنتاج والأجزاء" },
-            { key: "financial", label: "💰 المالية" },
-            { key: "chat", label: "💬 المحادثة" },
-            { key: "media", label: "📸 صور وملاحظات" },
-            { key: "timeline", label: "📊 سير العمل" },
-          ].map((tab) => (
-            <button key={tab.key} onClick={() => setActiveTab(tab.key as typeof activeTab)}
-              className={`flex-1 px-4 py-2.5 rounded-lg text-sm font-bold whitespace-nowrap transition ${activeTab === tab.key ? "bg-[#1B5E38] text-white" : "text-gray-600 hover:bg-gray-50"}`}>
-              {tab.label}
-            </button>
-          ))}
-        </div>
-
-        {activeTab === "production" && <ProductionTab items={items} tasks={tasks} onRefresh={loadData} />}
-        {activeTab === "financial" && <FinancialTab order={order} payments={payments} />}
-        {activeTab === "chat" && <ChatTab orderId={order.id} initialMessages={messages} />}
-        {activeTab === "media" && <MediaTab initialImages={images} initialNotes={notesArr} orderId={order.id} />}
-        {activeTab === "timeline" && <TimelineTab events={timeline} />}
-      </div>
-
-      {showPrint && <PrintModalAdapter order={order} items={items} onClose={() => setShowPrint(false)} />}
+      </main>
     </div>
   );
 }
