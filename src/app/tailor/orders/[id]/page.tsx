@@ -34,7 +34,7 @@ export default function TailorOrderPage() {
       try {
         const { data, error } = await (supabase as any)
           .from('orders')
-          .select('*')
+          .select('*, order_items(*)')
           .eq('id', id)
           .single();
 
@@ -63,7 +63,7 @@ export default function TailorOrderPage() {
   async function setStatus(status: string, extra: Record<string, any> = {}) {
     setUpdating(true);
     try {
-      const updateData: Record<string, any> = { status, ...extra };
+      const updateData: Record<string, any> = { status, workflow_status: status === 'in_progress' ? 'cutting' : status === 'completed' ? 'ready' : status, updated_at: new Date().toISOString(), ...extra };
 
       const { error } = await (supabase as any)
         .from('orders')
@@ -90,7 +90,7 @@ export default function TailorOrderPage() {
     setUpdating(true);
     try {
       const payload = { ...(order?.payload ?? {}), completedImages: photos };
-      const updateData: Record<string, any> = { status: 'completed', payload };
+      const updateData: Record<string, any> = { status: 'completed', workflow_status: 'ready', completed_at: new Date().toISOString(), payload, updated_at: new Date().toISOString() };
 
       const { error } = await (supabase as any)
         .from('orders')

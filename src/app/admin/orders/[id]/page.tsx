@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
+import { supabase } from '@/lib/supabase';
 import {
   fetchOrderById, fetchWorkflowSteps, fetchCarpenterPayments,
   fetchOrderReminders, fetchDelayLogs, fetchInvoiceArchive,
@@ -19,10 +20,31 @@ import {
   Scissors, CheckCircle, Clock, AlertTriangle, Bell,
   DollarSign, CreditCard, FileText, Image, MessageSquare,
   ClipboardCopy, Archive, RotateCcw, ChevronDown, ChevronUp,
-  Plus, Trash2, Save, Send,
+  Plus, Trash2, Save, Send, Upload,
 } from 'lucide-react';
 
 type TabType = 'info' | 'workflow' | 'payments' | 'reminders' | 'delays' | 'invoices';
+
+function TechnicalObjectView({ value, depth = 0 }: { value: any; depth?: number }) {
+  if (value == null || value === '') return <span className="text-gray-400">—</span>;
+  if (typeof value !== 'object') return <span className="font-medium text-gray-700">{String(value)}</span>;
+  if (Array.isArray(value)) return (
+    <div className="space-y-2">{value.map((v, i) => <div key={i} className="rounded-lg bg-white border p-3"><TechnicalObjectView value={v} depth={depth + 1} /></div>)}</div>
+  );
+  const entries = Object.entries(value).filter(([k, v]) => !['calculations', 'cost_breakdown', 'price', 'unitPrice', 'totalPrice', 'total_price', 'cost'].includes(k) && v != null && v !== '');
+  if (!entries.length) return <span className="text-gray-400">لا توجد تفاصيل تقنية</span>;
+  return <div className={`grid grid-cols-1 ${depth === 0 ? 'md:grid-cols-2' : ''} gap-2`}>
+    {entries.map(([key, val]) => <div key={key} className="rounded-lg bg-white border border-gray-100 p-3">
+      <div className="text-xs text-gray-400 mb-1">{technicalLabel(key)}</div>
+      <TechnicalObjectView value={val} depth={depth + 1} />
+    </div>)}
+  </div>;
+}
+
+function technicalLabel(key: string) {
+  const labels: Record<string, string> = { length: 'الطول', width: 'العرض', height: 'الارتفاع', length_cm: 'الطول (سم)', width_cm: 'العرض (سم)', height_cm: 'الارتفاع (سم)', fabric: 'الثوب', color: 'اللون', quantity: 'الكمية', count: 'العدد', shape: 'الشكل', stuffing: 'الحشو', notes: 'ملاحظات', measurements: 'القياسات', seddars: 'السداري', cushions: 'المخاد', decorCushions: 'مخاد الديكور', model: 'الموديل', type: 'النوع', size: 'الحجم' };
+  return labels[key] || key.replaceAll('_', ' ');
+}
 
 export default function OrderDetailsPage() {
   const params = useParams();
@@ -42,6 +64,7 @@ export default function OrderDetailsPage() {
   const [newPayment, setNewPayment] = useState({ amount: '', date: '', notes: '' });
   const [delayForm, setDelayForm] = useState({ newDate: '', reason: '', sendApology: true });
   const [trackingUrl, setTrackingUrl] = useState('');
+  const [invoiceUploading, setInvoiceUploading] = useState(false);
 
   const loadAll = async () => {
     setLoading(true);
@@ -140,6 +163,29 @@ export default function OrderDetailsPage() {
   const copyTracking = () => {
     navigator.clipboard.writeText(trackingUrl);
     alert('تم النسخ!');
+  };
+
+  const handleInvoiceUpload = async (file: File) => {
+    setInvoiceUploading(true);
+    try {
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const path = `${orderId}/${Date.now()}-${safeName}`;
+      const { error: uploadError } = await supabase.storage.from('invoices').upload(path, file, { upsert: false });
+      if (uploadError) throw uploadError;
+      const { data: publicData } = supabase.storage.from('invoices').getPublicUrl(path);
+      const { error: insertError } = await (supabase.from('invoice_archive') as any).insert({
+        order_id: orderId, invoice_image_url: publicData.publicUrl, supplier_name: order?.company_name || null,
+        invoice_date: new Date().toISOString().slice(0,10), uploaded_by: 'المدير'
+      });
+      if (insertError) throw insertError;
+      await loadAll();
+      alert('تم حفظ فاتورة الشركة في أرشيف الطلبية');
+    } catch (error: any) {
+      console.error(error);
+      alert(`فشل رفع الفاتورة: ${error?.message || 'خطأ غير معروف'}`);
+    } finally {
+      setInvoiceUploading(false);
+    }
   };
 
   if (loading) {
@@ -278,12 +324,28 @@ export default function OrderDetailsPage() {
                   </div>
                 </div>
 
-                {order.payload && (
+                {order.items && order.items.length > 0 && (
+                  <div className="space-y-4">
+                    <h3 className="font-bold text-gray-800 flex items-center gap-2"><FileText className="w-5 h-5 text-[#1B5E38]" /> تفاصيل المنتجات التقنية</h3>
+                    {order.items.map((item, index) => (
+                      <div key={item.id} className="bg-[#FAFAF8] rounded-xl border border-gray-100 p-5 space-y-4">
+                        <div className="flex items-center justify-between gap-3 border-b pb-3">
+                          <div>
+                            <p className="font-bold text-gray-800">{item.product_name || item.label || `المنتج ${index + 1}`}</p>
+                            <p className="text-xs text-gray-500">النوع: {getProductLabel(item.product_type)}</p>
+                          </div>
+                          <span className="px-2 py-1 rounded-lg bg-white border text-xs font-bold">الكمية: {item.quantity || 1}</span>
+                        </div>
+                        <TechnicalObjectView value={item.production_details || item.details || {}} />
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {(!order.items || order.items.length === 0) && order.payload && (
                   <div className="space-y-4">
                     <h3 className="font-bold text-gray-800 flex items-center gap-2"><FileText className="w-5 h-5 text-[#1B5E38]" /> التفاصيل التقنية</h3>
-                    <div className="bg-[#FAFAF8] rounded-xl p-4">
-                      <pre className="text-xs text-gray-600 overflow-x-auto whitespace-pre-wrap">{JSON.stringify(order.payload, null, 2)}</pre>
-                    </div>
+                    <div className="bg-[#FAFAF8] rounded-xl p-4"><TechnicalObjectView value={order.payload} /></div>
                   </div>
                 )}
 
@@ -544,6 +606,14 @@ export default function OrderDetailsPage() {
             {activeTab === 'invoices' && (
               <div className="space-y-4">
                 <h3 className="font-bold text-gray-800 flex items-center gap-2"><FileText className="w-5 h-5 text-[#1B5E38]" /> أرشيف الفواتير</h3>
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <p className="text-sm text-gray-500">احتفظ بصورة فاتورة الشركة داخل أرشيف الطلبية.</p>
+                  <label className="px-4 py-2 rounded-xl bg-[#1B5E38] text-white text-sm font-bold flex items-center gap-2 cursor-pointer hover:bg-[#144d2e] transition">
+                    <Upload className="w-4 h-4" />
+                    {invoiceUploading ? 'جاري الرفع...' : 'رفع فاتورة الشركة'}
+                    <input type="file" accept="image/*" className="hidden" disabled={invoiceUploading} onChange={e => { const f = e.target.files?.[0]; if (f) void handleInvoiceUpload(f); e.currentTarget.value = ''; }} />
+                  </label>
+                </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {invoices.map(inv => (
                     <div key={inv.id} className="bg-white rounded-xl border border-gray-200 overflow-hidden">

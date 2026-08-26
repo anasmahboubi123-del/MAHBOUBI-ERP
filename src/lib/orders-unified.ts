@@ -9,6 +9,21 @@ import { supabase } from './supabase';
 
 export type ProductType = 'salon' | 'khamiya' | 'romani' | 'bounge' | 'tapis' | 'wood' | 'mixed';
 
+export interface UnifiedOrderItem {
+  id: string;
+  product_type: ProductType | string | null;
+  product_name: string | null;
+  label: string | null;
+  quantity: number | null;
+  unit_price: number | null;
+  total_price: number | null;
+  details: any;
+  calculations: any;
+  production_details: any;
+  line_notes: string | null;
+  thumbnail_url: string | null;
+}
+
 export type WorkflowStatus =
   | 'new'
   | 'review'
@@ -46,6 +61,7 @@ export interface UnifiedOrder {
   delay_count: number | null;
   notes: string | null;
   payload: any;
+  items?: UnifiedOrderItem[];
   original_table: string | null;
   tailor_name?: string | null;
   tailor_phone?: string | null;
@@ -258,57 +274,133 @@ export async function fetchUnifiedOrders(filters?: {
   dateFrom?: string;
   dateTo?: string;
 }): Promise<UnifiedOrder[]> {
-  let query = supabase
-    .from('unified_orders')
-    .select('*')
+  let query = (supabase.from('orders') as any)
+    .select('*, order_items(*)')
+    .is('deleted_at', null)
     .order('created_at', { ascending: false });
 
-  if (filters?.productType && filters.productType !== 'all') {
-    query = query.eq('product_type', filters.productType);
-  }
-  if (filters?.status && filters.status !== 'all') {
-    query = query.eq('workflow_status', filters.status);
-  }
-  if (filters?.tailorId) {
-    query = query.eq('assigned_tailor_id', filters.tailorId);
-  }
   if (filters?.isArchived !== undefined) {
-    query = query.eq('is_archived', filters.isArchived);
+    query = filters.isArchived ? query.not('archived_at', 'is', null) : query.is('archived_at', null);
   } else {
-    query = query.or('is_archived.eq.false,is_archived.is.null');
+    query = query.is('archived_at', null);
   }
-  if (filters?.dateFrom) {
-    query = query.gte('delivery_date', filters.dateFrom);
-  }
-  if (filters?.dateTo) {
-    query = query.lte('delivery_date', filters.dateTo);
-  }
+  if (filters?.dateFrom) query = query.gte('delivery_date', filters.dateFrom);
+  if (filters?.dateTo) query = query.lte('delivery_date', filters.dateTo);
   if (filters?.searchQuery) {
     const q = filters.searchQuery.trim();
-    query = query.or(
-      `customer_name.ilike.%${q}%,customer_phone.ilike.%${q}%,order_number.ilike.%${q}%`
-    );
+    query = query.or(`customer_name.ilike.%${q}%,customer_phone.ilike.%${q}%,order_number.ilike.%${q}%`);
   }
+  if (filters?.tailorId) query = query.eq('assigned_tailor_id', filters.tailorId);
 
   const { data, error } = await query;
-  if (error) {
-    console.error('fetchUnifiedOrders error:', error);
-    throw error;
+  if (error) throw error;
+
+  const rows = (data || []) as any[];
+  const tailorIds = [...new Set(rows.map(r => r.assigned_tailor_id).filter(Boolean))];
+  const companyIds = [...new Set(rows.map(r => r.company_contact_id).filter(Boolean))];
+
+  const [{ data: tailors }, { data: companies }] = await Promise.all([
+    tailorIds.length ? (supabase.from('tailors') as any).select('id, full_name, phone').in('id', tailorIds) : Promise.resolve({ data: [] }),
+    companyIds.length ? (supabase.from('company_contacts') as any).select('*').in('id', companyIds) : Promise.resolve({ data: [] }),
+  ]);
+  const tailorMap = new Map<string, { full_name?: string; phone?: string }>(
+    (tailors || []).map((t: any) => [t.id, t] as [string, { full_name?: string; phone?: string }])
+  );
+  const companyMap = new Map<string, { company_name?: string; phone?: string; whatsapp_number?: string }>(
+    (companies || []).map((c: any) => [c.id, c] as [string, { company_name?: string; phone?: string; whatsapp_number?: string }])
+  );
+
+  let result: UnifiedOrder[] = rows.map((r: any) => {
+    const items = (r.order_items || []).map((i: any): UnifiedOrderItem => ({
+      id: i.id, product_type: i.product_type || i.kind, product_name: i.product_name || i.label,
+      label: i.label, quantity: i.quantity ?? i.qty ?? 1, unit_price: i.unit_price ?? 0,
+      total_price: i.total_price ?? i.total ?? 0, details: i.details || i.payload || {},
+      calculations: i.calculations || {}, production_details: i.production_details || i.details || {},
+      line_notes: i.line_notes || null, thumbnail_url: i.thumbnail_url || null,
+    }));
+    const primaryType = (r.product_type || items[0]?.product_type || r.payload?.product_type || 'mixed') as string;
+    const normalizedStatus = (r.workflow_status || mapLegacyStatus(r.status)) as string;
+    const total = Number(r.total_amount ?? r.total ?? 0);
+    const deposit = Number(r.deposit_amount ?? r.deposit ?? 0);
+    const remaining = Number(r.remaining_amount ?? Math.max(0, total - deposit));
+    const tailor = r.assigned_tailor_id ? tailorMap.get(r.assigned_tailor_id) : null;
+    const company = r.company_contact_id ? companyMap.get(r.company_contact_id) : null;
+    return {
+      id: r.id, order_number: r.order_number, customer_name: r.customer_name, customer_phone: r.customer_phone,
+      customer_city: r.customer_city, total_amount: total, deposit_amount: deposit, remaining_amount: remaining,
+      status: r.status, workflow_status: normalizedStatus, product_type: primaryType,
+      delivery_date: r.delivery_date || r.delivery_expected_date || null, created_at: r.created_at, updated_at: r.updated_at,
+      assigned_tailor_id: r.assigned_tailor_id || r.tailor_id || null, company_contact_id: r.company_contact_id || null,
+      is_archived: Boolean(r.archived_at), archived_at: r.archived_at, tracking_token: r.tracking_token || null,
+      delay_count: r.delay_count || 0, notes: r.notes || r.internal_notes || r.order_notes || null,
+      payload: { ...(r.payload || {}), customer: { name: r.customer_name, phone: r.customer_phone, city: r.customer_city, address: r.customer_address }, items },
+      items, original_table: 'orders', tailor_name: tailor?.full_name || null, tailor_phone: tailor?.phone || null,
+      company_name: company?.company_name || null, company_phone: company?.phone || null, company_whatsapp: company?.whatsapp_number || null,
+      total_carpenter_paid: 0,
+    };
+  });
+
+  if (filters?.productType && filters.productType !== 'all') result = result.filter(o => o.product_type === filters.productType);
+  if (filters?.status && filters.status !== 'all') result = result.filter(o => o.workflow_status === filters.status);
+  if (filters?.tailorId) result = result.filter(o => o.assigned_tailor_id === filters.tailorId);
+
+  if (result.some(o => o.product_type === 'wood')) {
+    const woodIds = result.filter(o => o.product_type === 'wood').map(o => o.id);
+    const { data: payments } = await (supabase.from('carpenter_payments') as any).select('order_id, amount').in('order_id', woodIds);
+    const paid = new Map<string, number>();
+    (payments || []).forEach((p: any) => paid.set(p.order_id, (paid.get(p.order_id) || 0) + Number(p.amount || 0)));
+    result = result.map(o => ({ ...o, total_carpenter_paid: paid.get(o.id) || 0 }));
   }
-  return (data || []) as UnifiedOrder[];
+  return result;
+}
+
+function mapLegacyStatus(status: string | null): WorkflowStatus {
+  switch (status) {
+    case 'in_progress': case 'in-progress': return 'sewing';
+    case 'completed': case 'ready': return 'ready';
+    case 'delivered': return 'delivered';
+    case 'cancelled': return 'cancelled';
+    case 'reviewed': return 'review';
+    default: return 'new';
+  }
 }
 
 export async function fetchOrderById(orderId: string): Promise<UnifiedOrder | null> {
-  const { data, error } = await supabase
-    .from('unified_orders')
-    .select('*')
+  const { data, error } = await (supabase.from('orders') as any)
+    .select('*, order_items(*)')
     .eq('id', orderId)
     .single();
-  if (error) {
-    console.error('fetchOrderById error:', error);
-    return null;
-  }
-  return data as UnifiedOrder | null;
+  if (error || !data) return null;
+
+  // Reuse the same normalization rules as the list without excluding archived orders.
+  const r: any = data;
+  const items: UnifiedOrderItem[] = (r.order_items || []).map((i: any) => ({
+    id: i.id, product_type: i.product_type || i.kind, product_name: i.product_name || i.label,
+    label: i.label, quantity: i.quantity ?? i.qty ?? 1, unit_price: i.unit_price ?? i.unitPrice ?? 0,
+    total_price: i.total_price ?? i.total ?? 0, details: i.details || i.payload || {},
+    calculations: i.calculations || {}, production_details: i.production_details || i.details || {},
+    line_notes: i.line_notes || null, thumbnail_url: i.thumbnail_url || null,
+  }));
+  const total = Number(r.total_amount ?? r.total ?? 0);
+  const deposit = Number(r.deposit_amount ?? r.deposit ?? 0);
+  const { data: tailor } = r.assigned_tailor_id ? await (supabase.from('tailors') as any).select('id, full_name, phone').eq('id', r.assigned_tailor_id).maybeSingle() : { data: null };
+  const { data: company } = r.company_contact_id ? await (supabase.from('company_contacts') as any).select('*').eq('id', r.company_contact_id).maybeSingle() : { data: null };
+  const { data: payments } = r.product_type === 'wood' ? await (supabase.from('carpenter_payments') as any).select('amount').eq('order_id', orderId) : { data: [] };
+  const paid = (payments || []).reduce((sum: number, x: any) => sum + Number(x.amount || 0), 0);
+  const productType = r.product_type || items[0]?.product_type || r.payload?.product_type || 'mixed';
+  return {
+    id: r.id, order_number: r.order_number, customer_name: r.customer_name, customer_phone: r.customer_phone, customer_city: r.customer_city,
+    total_amount: total, deposit_amount: deposit, remaining_amount: Number(r.remaining_amount ?? Math.max(0, total - deposit)),
+    status: r.status, workflow_status: r.workflow_status || mapLegacyStatus(r.status), product_type: productType,
+    delivery_date: r.delivery_date || r.delivery_expected_date || null, created_at: r.created_at, updated_at: r.updated_at,
+    assigned_tailor_id: r.assigned_tailor_id || r.tailor_id || null, company_contact_id: r.company_contact_id || null,
+    is_archived: Boolean(r.archived_at || r.is_archived), archived_at: r.archived_at, tracking_token: r.tracking_token || null,
+    delay_count: r.delay_count || 0, notes: r.notes || r.internal_notes || r.order_notes || null,
+    payload: { ...(r.payload || {}), customer: { name: r.customer_name, phone: r.customer_phone, city: r.customer_city, address: r.customer_address }, items },
+    items, original_table: 'orders', tailor_name: tailor?.full_name || null, tailor_phone: tailor?.phone || null,
+    company_name: company?.company_name || null, company_phone: company?.phone || null, company_whatsapp: company?.whatsapp_number || null,
+    total_carpenter_paid: paid,
+  };
 }
 
 export async function updateOrderWorkflowStatus(
@@ -317,7 +409,7 @@ export async function updateOrderWorkflowStatus(
 ): Promise<void> {
   const { error } = await (supabase
     .from('orders') as any)
-    .update({ workflow_status: status, updated_at: new Date().toISOString() })
+    .update({ workflow_status: status, status: status === 'delivered' ? 'delivered' : status === 'ready' ? 'ready' : status === 'cancelled' ? 'cancelled' : status === 'new' ? 'pending' : 'in_progress', updated_at: new Date().toISOString() })
     .eq('id', orderId);
   if (error) throw error;
 }

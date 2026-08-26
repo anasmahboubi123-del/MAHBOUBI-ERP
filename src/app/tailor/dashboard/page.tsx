@@ -18,8 +18,10 @@ interface TailorOrder {
   customer_name: string;
   customer_phone?: string;
   status: OrderStatus;
+  workflow_status?: string;
   delivery_date?: string;
   product_type?: string;
+  assigned_tailor_id?: string | null;
   created_at: string;
 }
 
@@ -48,7 +50,7 @@ export default function TailorDashboardPage() {
       // نفترض أن الطلبية تحتوي على payload->tailor_id أو نبحث في order_items
       const { data, error } = await supabase
         .from("orders")
-        .select("id, order_number, customer_name, customer_phone, status, delivery_date, payload, created_at")
+        .select("id, order_number, customer_name, customer_phone, status, workflow_status, delivery_date, delivery_expected_date, product_type, assigned_tailor_id, order_items(*), payload, created_at")
         .order("created_at", { ascending: false });
 
       if (error) throw error;
@@ -58,18 +60,19 @@ export default function TailorDashboardPage() {
       const mapped: TailorOrder[] = (data || [])
         .filter((o: any) => {
           // إذا كان payload يحتوي على tailor_id
-          const payloadTailorId = o.payload?.tailor_id;
-          if (payloadTailorId && payloadTailorId !== tailorId) return false;
-          // إذا لم يكن هناك tailor_id محدد، نعرض للجميع (مؤقتاً)
-          return true;
+          if (o.assigned_tailor_id && o.assigned_tailor_id !== tailorId) return false;
+          if (!o.assigned_tailor_id && o.payload?.tailor_id && o.payload.tailor_id !== tailorId) return false;
+          return Boolean(o.assigned_tailor_id === tailorId || o.payload?.tailor_id === tailorId);
         })
         .map((o: any) => ({
           id: o.id,
           order_number: o.order_number || o.id.slice(-6).toUpperCase(),
           customer_name: o.customer_name || "زبون غير معروف",
           customer_phone: o.customer_phone,
-          status: normalizeStatus(o.status),
-          delivery_date: o.delivery_date,
+          status: normalizeStatus(o.workflow_status || o.status),
+          workflow_status: o.workflow_status,
+          delivery_date: o.delivery_date || o.delivery_expected_date,
+          assigned_tailor_id: o.assigned_tailor_id,
           product_type: o.payload?.product_type || "صالون",
           created_at: o.created_at,
         }));
@@ -83,14 +86,14 @@ export default function TailorDashboardPage() {
   }
 
   function normalizeStatus(s: string): OrderStatus {
-    if (s === "in-progress" || s === "in_progress") return "in_progress";
-    if (s === "completed") return "completed";
+    if (["cutting", "sewing", "quality_check", "in_progress", "in-progress", "tailor_assigned"].includes(s)) return "in_progress";
+    if (["ready", "delivered", "completed"].includes(s)) return "completed";
     return "new";
   }
 
   async function startWork(orderId: string) {
     try {
-      await supabase.from("orders").update({ status: "in_progress" }).eq("id", orderId);
+      await supabase.from("orders").update({ status: "in_progress", workflow_status: "cutting", updated_at: new Date().toISOString() } as any).eq("id", orderId);
       fetchOrders();
     } catch (err) {
       console.error(err);

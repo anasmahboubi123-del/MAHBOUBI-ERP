@@ -105,7 +105,8 @@ const PRODUCT_TYPE_NAMES: Record<string, Record<DocumentLanguage, string>> = {
   salon: { ar: "صالون", fr: "Salon", es: "Salón", it: "Salotto", bilingual: "صالون / Salon" },
   wood: { ar: "عود", fr: "Bois", es: "Madera", it: "Legno", bilingual: "عود / Bois" },
   khamiya: { ar: "خامية", fr: "Khamiya", es: "Khamiya", it: "Khamiya", bilingual: "خامية / Khamiya" },
-  foam: { ar: "اسفنج", fr: "Mousse", es: "Espuma", it: "Schiuma", bilingual: "اسفنج / Mousse" },
+  bounge: { ar: "البونج", fr: "Mousse", es: "Espuma", it: "Schiuma", bilingual: "البونج / Mousse" },
+  foam: { ar: "البونج", fr: "Mousse", es: "Espuma", it: "Schiuma", bilingual: "البونج / Mousse" },
 };
 
 function getProductTypeName(type: string, lang: DocumentLanguage): string {

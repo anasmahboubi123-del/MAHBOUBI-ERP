@@ -109,6 +109,26 @@ function ReminderBanner({ reminders, onDismiss }: { reminders: OrderReminder[]; 
   );
 }
 
+function TechnicalSummary({ item }: { item: any }) {
+  const technicalFields = Object.entries(item || {}).filter(([key, value]) =>
+    !['id', 'product_name', 'label', 'quantity', 'price', 'total', 'created_at', 'updated_at'].includes(key) &&
+    value !== null && value !== undefined && value !== '' && typeof value !== 'object'
+  );
+
+  if (technicalFields.length === 0) return null;
+
+  return (
+    <div className="space-y-1 text-xs text-gray-600">
+      {technicalFields.map(([key, value]) => (
+        <div key={key} className="flex justify-between gap-3">
+          <span className="text-gray-400">{key.replace(/_/g, ' ')}</span>
+          <span className="font-medium text-gray-700 text-left">{String(value)}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function UnifiedOrdersPage() {
   const [orders, setOrders] = useState<UnifiedOrder[]>([]);
   const [loading, setLoading] = useState(true);
@@ -501,13 +521,19 @@ export default function UnifiedOrdersPage() {
                                   <div className="flex justify-between"><span className="text-gray-500">المتبقي</span><span className="font-bold text-red-600">{formatCurrency(order.remaining_amount)}</span></div>
                                 </div>
                               </div>
-                              <div className="bg-white rounded-xl p-4 border border-gray-100">
+                              <div className="bg-white rounded-xl p-4 border border-gray-100 md:col-span-1">
                                 <h4 className="text-xs font-bold text-gray-400 uppercase mb-3">التفاصيل التقنية</h4>
-                                <div className="space-y-2 text-sm">
+                                <div className="space-y-2 text-sm mb-3">
                                   <div className="flex justify-between"><span className="text-gray-500">المنتج</span><span className="font-bold">{getProductLabel(order.product_type)}</span></div>
                                   <div className="flex justify-between"><span className="text-gray-500">الحالة</span><span className="font-bold">{getWorkflowStatusLabel(order.workflow_status)}</span></div>
                                   <div className="flex justify-between"><span className="text-gray-500">التأخيرات</span><span className="font-bold">{order.delay_count || 0} مرة</span></div>
                                 </div>
+                                {order.items?.map((item: any) => (
+                                  <div key={item.id} className="border-t pt-2 mt-2">
+                                    <p className="font-bold text-xs mb-2">{item.product_name || item.label || 'منتج'} × {item.quantity || 1}</p>
+                                    <TechnicalSummary item={item} />
+                                  </div>
+                                ))}
                               </div>
                             </div>
 
@@ -564,7 +590,7 @@ export default function UnifiedOrdersPage() {
                                   {showAssignContact === order.id && (
                                     <div className="absolute z-20 mt-2 w-64 bg-white rounded-xl shadow-xl border border-gray-100 p-2">
                                       <p className="text-xs font-bold text-gray-400 px-2 py-1">اختر الشركة</p>
-                                      {companyContacts.filter(c => c.category === 'foam').map(c => (
+                                      {companyContacts.filter(c => c.category === 'bounge').map(c => (
                                         <button
                                           key={c.id}
                                           onClick={() => handleAssignContact(order.id, c.id)}

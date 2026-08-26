@@ -224,14 +224,25 @@ export function OrderCartProvider({ children }: { children: React.ReactNode }) {
           customer_email: cart.customerInfo.email || null,
           customer_address: cart.customerInfo.address || null,
           customer_city: cart.customerInfo.city || null,
+          // Canonical fields used by Admin / Tailor / Archive / Dashboard
+          delivery_date: cart.deliveryDate || null,
           delivery_expected_date: cart.deliveryDate || null,
           subtotal: Number(totals.subtotal) || 0,
-          discount: Number(totals.discount) || 0,
+          discount_amount: Number(totals.discount) || 0,
           discount_reason: cart.financials.discountReason || null,
+          total_amount: Number(totals.total) || 0,
+          deposit_amount: Number(totals.deposit) || 0,
+          remaining_amount: Number(totals.remaining) || 0,
+          // Legacy compatibility fields
+          discount: Number(totals.discount) || 0,
           total: Number(totals.total) || 0,
           deposit: Number(totals.deposit) || 0,
           remaining: Number(totals.remaining) || 0,
           payment_method: cart.financials.paymentMethod || "cash",
+          workflow_status: status === "draft" ? "new" : "new",
+          product_type: cart.items[0]?.productType || null,
+          is_archived: false,
+          delay_count: 0,
           status,
           notes: cart.financials.notes || null,
           order_notes: cart.orderNotes || null,
@@ -272,9 +283,16 @@ export function OrderCartProvider({ children }: { children: React.ReactNode }) {
             quantity: Number(item.quantity) || 1,
             unit_price: Number(item.unitPrice) || 0,
             total_price: Number(item.totalPrice) || 0,
-            technical_details: item.details || {},
-            cost_breakdown: item.calculations || {},
-            item_notes: item.details?.notes || null,
+            details: item.details || {},
+            calculations: item.calculations || {},
+            production_details: item.details || {},
+            payload: {
+              technical_details: item.details || {},
+              calculations: item.calculations || {},
+              production_details: item.details || {},
+            },
+            line_discount: 0,
+            line_notes: item.details?.notes || null,
           }));
 
           console.log("[saveOrder] Items payload:", orderItems);
@@ -291,6 +309,44 @@ export function OrderCartProvider({ children }: { children: React.ReactNode }) {
               success: false,
               error: `فشل حفظ المنتجات: ${itemsError.message} (كود: ${itemsError.code})`,
             };
+          }
+        }
+
+        // إنشاء مسار العمل والتذكيرات من نفس الطلب المركزي.
+        const productType = cart.items[0]?.productType || null;
+        const deliveryDate = cart.deliveryDate ? new Date(`${cart.deliveryDate}T00:00:00`) : null;
+        const workflowSteps = productType === 'bounge'
+          ? [['new','تم استلام الطلبية','📥'],['sent_to_company','إرسال للشركة','📤'],['in_production','قيد الإنتاج','🏭'],['ready','جاهز للتسليم','✅']]
+          : productType === 'tapis'
+          ? [['new','تم استلام الطلبية','📥'],['contacted_shop','الاتصال بمحل الزرابي','📞'],['ready','جاهز للتسليم','✅']]
+          : productType === 'wood'
+          ? [['new','تم استلام الطلبية','📥'],['contacted_carpenter','الاتصال بالنجار','📞'],['in_progress','قيد التصنيع','🔨'],['ready','جاهز للتسليم','✅']]
+          : [['new','تم استلام الطلبية','📥'],['tailor_assigned','تعيين الخياط','👔'],['cutting','التقطيع','✂️'],['sewing','الخياطة','🪡'],['quality_check','فحص الجودة','🔍'],['ready','جاهز للتسليم','✅']];
+        await supabase.from('order_workflow_steps').insert(workflowSteps.map(([step_name, step_label, step_icon], index) => ({
+          order_id: orderId, step_name, step_label, step_icon, status: index === 0 ? 'completed' : 'pending',
+          started_at: index === 0 ? new Date().toISOString() : null, completed_at: index === 0 ? new Date().toISOString() : null, sort_order: index + 1
+        })) as any);
+
+        if (deliveryDate && productType) {
+          const offsets: Record<string, number> = { bounge: 20, tapis: 5, wood: 45 };
+          const offset = offsets[productType];
+          if (offset) {
+            const trigger = new Date(deliveryDate); trigger.setDate(trigger.getDate() - offset);
+            await supabase.from('order_reminders').insert({
+              order_id: orderId, reminder_type: `${productType}_deadline`,
+              title: productType === 'bounge' ? 'إرسال طلبية البونج للشركة' : productType === 'tapis' ? 'الاتصال بمحل الزرابي' : 'متابعة طلبية العود مع النجار',
+              description: productType === 'bounge' ? 'يجب إرسال التفاصيل التقنية للشركة قبل 20 يوماً من التسليم.' : productType === 'tapis' ? 'يجب الاتصال بمحل الزرابي لتقديم الطلبية.' : 'تذكير بمتابعة النجار والدفعات قبل 45 يوماً من التسليم.',
+              trigger_date: trigger.toISOString().slice(0,10), is_triggered: false, is_dismissed: false,
+              priority: 'urgent', whatsapp_template: null
+            } as any);
+          }
+          if (productType === 'bounge') {
+            const trigger = new Date(deliveryDate); trigger.setDate(trigger.getDate() - 1);
+            await supabase.from('order_reminders').insert({
+              order_id: orderId, reminder_type: 'bounge_invoice', title: 'رفع فاتورة الشركة',
+              description: 'يجب تصوير فاتورة الشركة وحفظها في أرشيف الطلبية.', trigger_date: trigger.toISOString().slice(0,10),
+              is_triggered: false, is_dismissed: false, priority: 'urgent', whatsapp_template: null
+            } as any);
           }
         }
 
@@ -345,14 +401,14 @@ export function OrderCartProvider({ children }: { children: React.ReactNode }) {
             address: order.customer_address || "",
             city: order.customer_city || "",
           },
-          deliveryDate: order.delivery_expected_date || "",
+          deliveryDate: order.delivery_date || order.delivery_expected_date || "",
           financials: {
             subtotal: order.subtotal || 0,
-            discount: order.discount || 0,
+            discount: order.discount_amount ?? order.discount ?? 0,
             discountReason: order.discount_reason || "",
-            total: order.total || 0,
-            deposit: order.deposit || 0,
-            remaining: order.remaining || 0,
+            total: order.total_amount ?? order.total ?? 0,
+            deposit: order.deposit_amount ?? order.deposit ?? 0,
+            remaining: order.remaining_amount ?? order.remaining ?? 0,
             paymentMethod: order.payment_method || "cash",
             notes: order.notes || "",
           },
