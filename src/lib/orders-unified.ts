@@ -296,9 +296,8 @@ export async function fetchUnifiedOrders(filters?: {
   if (error) throw error;
 
   const rows = (data || []) as any[];
-  const tailorIds = [...new Set(rows.map(r => r.assigned_tailor_id).filter(Boolean))];
-  const companyIds = [...new Set(rows.map(r => r.company_contact_id).filter(Boolean))];
-
+const tailorIds = Array.from(new Set(rows.map(r => r.assigned_tailor_id).filter(Boolean)));
+const companyIds = Array.from(new Set(rows.map(r => r.company_contact_id).filter(Boolean)));
   const [{ data: tailors }, { data: companies }] = await Promise.all([
     tailorIds.length ? (supabase.from('tailors') as any).select('id, full_name, phone').in('id', tailorIds) : Promise.resolve({ data: [] }),
     companyIds.length ? (supabase.from('company_contacts') as any).select('*').in('id', companyIds) : Promise.resolve({ data: [] }),

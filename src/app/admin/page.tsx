@@ -116,7 +116,7 @@ export default function AdminDashboardPage() {
       const [{ data: ordersData }, { data: partsData }, { data: tailorsData }, { data: timelineData }, { data: targetData }, { data: foamData }, { data: woodData }] = await Promise.all([
         supabase.from("orders").select("*").gte("created_at", since).order("created_at", { ascending: false }),
         supabase.from("order_parts").select("*").order("created_at", { ascending: false }),
-        supabase.from("tailors").select("*").eq("is_active", true).order("full_name", { ascending: true }),
+        supabase.from("tailors").select("*").eq("active", true).order("full_name", { ascending: true }),
         supabase.from("order_timeline").select("*").order("created_at", { ascending: false }).limit(10),
         supabase.from("settings").select("value").eq("key", "monthly_target").single(),
         supabase.from("foam_orders").select("*, foam_products(name), suppliers(name)").gte("created_at", since).order("created_at", { ascending: false }).limit(100),
